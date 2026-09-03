@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6379/0"
 
+    # Auth (issue #5). Provisional pending the team's formal ADR on issue #1;
+    # see docs/architecture/decisions/0001-authentication-approach.md.
+    secret_key: str = "dev-secret-change-me-please-at-least-32-bytes-long"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 30
+    auth_rate_limit: str = "5/minute"
+
 
 @lru_cache
 def get_settings() -> Settings:

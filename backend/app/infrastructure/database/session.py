@@ -1,4 +1,11 @@
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from collections.abc import AsyncIterator
+
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.core.config import get_settings
 
@@ -15,3 +22,18 @@ def get_engine() -> AsyncEngine:
 
 async def close_database() -> None:
     await _engine.dispose()
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """FastAPI dependency yielding a request-scoped session.
+
+    Commits on clean completion, rolls back on any exception, and always
+    closes the session at the end of the request.
+    """
+    async with async_session_factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
