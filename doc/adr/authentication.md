@@ -1,5 +1,4 @@
-"""
- use JWT authentication
+use JWT authentication
   JSON web Token 
  use this authentication because its widely use and it accept multiple user at a time. I will prescribe this authentication method because its the most use and it issues a signed access token after successful authentication. Morealso, the authentication logic will remain isolated from the application/domain modules so that the authentication mechanism can be replaced later without changing business logic.
 
@@ -78,7 +77,4 @@ For example:
             |
             +-- Job
 
-Application services must verify ownership before allowing operations on
-user-owned resources.
-
-"""
+Application services must verify ownership before allowing operations user-owned resources.

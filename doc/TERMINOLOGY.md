@@ -4,7 +4,7 @@
 -Currency- Naira, USD as dollar
 -Cookies
 -Data
--Users
+-Users[]
 -Token
 -Policy
 -sub-tracker-
