@@ -1,201 +1,51 @@
-
-The MVP requires monetary values for demo and seed data. The application needs one predictable currency for development, testing, and demonstrations while avoiding unnecessary multi-currency complexity during the MVP.
-
-Because the initial target environment is Nigeria, the canonical demo currency should be the Nigerian Naira.
+The MVP requires monetary values for demo and seed data. The application needs one predictable currency for development, testing, and demonstrations while avoiding unnecessary multi-currency complexity during the MVP.Because the initial target environment is Nigeria, the canonical demo currency should be the Nigerian Naira.
 
 The domain should nevertheless represent currency explicitly so that USD and other currencies can be introduced later without redesigning the monetary model.
 
+1. **NGN as the main demo currency**
+   - Matches the MVP demo context.
+   - Provides one deterministic currency for seed data.
+
+2. **USD as the optional demo currency for international audience**
+   - Familiar in many software examples.
+   - Does not match the MVP's Nigerian demo context.
+
+3. **Allow seed data to mix currencies without a canonical value**
+   - More realistic in some datasets.
+   - Makes deterministic demos and calculations ambiguous.
+
 ## Decision
 
-The MVP uses **Nigerian Naira (NGN / ₦)** as the canonical demo currency.
+The main demo/seed currency is **NGN (Nigerian Naira)**.
 
-All seed and demo monetary values MUST use NGN unless a specific test or integration explicitly requires another currency.
+All monetary values in deterministic seed data use `NGN`.
 
-Currency must be represented as a domain value and must not be hard-coded into presentation logic.
-
-For example:
-
-```json
-{
-  "amount": 15000,
-  "currency": "NGN"
-}
-```
-
-The currency code should use the **ISO 4217** representation:
-
-* `NGN` — Nigerian Naira
-* `USD` — United States Dollar
-* Other currencies should use their appropriate ISO 4217 code.
-
----
-
-## Currency Conditions
-
-### Condition 1 — Default/MVP currency
-
-If no currency is explicitly supplied for demo or seed data:
+The domain stores currency explicitly with every Money value:
 
 ```text
-currency = NGN
+Money
+- amount_minor
+- currency
 ```
 
-Therefore, all normal MVP seed records use NGN.
+`amount_minor` is an integer in the currency's minor unit. The application must not use floating-point values for persisted monetary amounts.
 
-Example:
+USD and other currencies are permitted when representing a real source record that is actually denominated in that currency. The system must:
 
-```json
-{
-  "amount": 25000,
-  "currency": "NGN"
-}
-```
-
----
-
-### Condition 2 — USD
-
-USD may be used when the data explicitly represents a USD-denominated transaction, external integration, or test case.
-
-Example:
-
-```json
-{
-  "amount": 100,
-  "currency": "USD"
-}
-```
-
-The system MUST NOT automatically treat USD values as NGN or convert USD to NGN unless currency conversion has been explicitly implemented.
-
----
-
-### Condition 3 — Other currencies
-
-Other currencies may be represented when required by an integration, test, or future feature.
-
-Example:
-
-```json
-{
-  "amount": 500,
-  "currency": "EUR"
-}
-```
-
-The backend should preserve the supplied currency rather than silently converting it.
-
-Supported currencies should eventually be controlled through a defined currency list/enum rather than accepting arbitrary strings.
-
----
-
-### Condition 4 — Currency conversion
-
-The MVP does **not** perform automatic currency conversion.
-
-For example, the system must not automatically convert:
-
-```text
-USD → NGN
-EUR → NGN
-GBP → NGN
-```
-
-unless an explicit currency-conversion feature and exchange-rate source are introduced.
-
-This prevents exchange-rate assumptions from affecting financial or demo data.
-
----
-
-### Condition 5 — API responses
-
-API responses containing monetary values should return both the numeric amount and currency.
-
-Preferred:
-
-```json
-{
-  "amount": 15000,
-  "currency": "NGN"
-}
-```
-
-Avoid:
-
-```json
-{
-  "amount": "₦15,000"
-}
-```
-
-Formatting such as `₦15,000` belongs to the presentation/frontend layer.
-
----
+- preserve the source currency;
+- never silently label a non-NGN amount as NGN;
+- never perform implicit currency conversion;
+- require an explicit exchange-rate/conversion operation if a cross-currency comparison is introduced later.
 
 ## Consequences
 
 ### Positive
 
-* NGN provides a locally appropriate default for the MVP.
-* Seed data remains deterministic.
-* API consumers always know which currency an amount represents.
-* USD and other currencies can be represented without changing the monetary structure.
-* Currency formatting remains separate from domain logic.
-* Future multi-currency support can be introduced incrementally.
-* Avoids premature exchange-rate and conversion complexity.
+- Seed/demo behavior is deterministic and locally relevant.
+- Currency ambiguity is removed from the MVP.
+- Real external subscriptions can still preserve their original currencies.
+- Money handling is explicit and safer.
 
-### Negative
+## Multi-currency 
 
-* The MVP does not provide automatic currency conversion.
-* Developers must explicitly specify the currency when working with non-NGN values.
-* Multi-currency validation and exchange-rate handling will require additional implementation in the future.
-* Existing seed data must be updated if it currently assumes USD.
-
----
-
-## Example
-
-### MVP seed data
-
-```json
-{
-  "price": {
-    "amount": 50000,
-    "currency": "NGN"
-  }
-}
-```
-
-### USD-specific record
-
-```json
-{
-  "price": {
-    "amount": 100,
-    "currency": "USD"
-  }
-}
-```
-
-### Other currency
-
-```json
-{
-  "price": {
-    "amount": 75,
-    "currency": "GBP"
-  }
-}
-```
-
-In all three cases, the backend preserves the amount and its associated currency. Conversion and display formatting are separate concerns.
-
-## Implementation Rule
-
-**NGN is the default and canonical MVP demo currency.**
-
-USD or another currency may be used only when the record explicitly requires that currency.
-
-No component should infer or silently convert one currency into another.
-
-If multi-currency transactions, exchange rates, or automatic conversion become an MVP requirement, this ADR must be revisited or superseded by a new ADR.
+- option will be determine by the team.

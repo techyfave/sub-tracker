@@ -1,0 +1,26 @@
+# Subscription Tracker Backend Documentation
+
+This index is the canonical entry point for backend architecture decisions and terminology.
+
+## Architecture
+
+The MVP backend is a **modular monolith**: one deployable application with explicit domain/application/infrastructure boundaries. External integrations are replaceable adapters behind ports/interfaces. Vendor SDKs, broker clients, authentication implementations, and provider-specific models must not leak into domain logic.
+
+## ADRs
+
+| ADR | Decision |
+|---|---|
+| [001 Authentication Approach](adr/001-authentication-approach.md) | JWT bearer authentication behind an authentication port |
+| [002 Background Job Library](adr/002-background-job-library.md) | Celery with Redis behind a job/queue port |
+| [003 AI Provider Boundary](adr/003-ai-provider-boundary.md) | Gemini is the MVP baseline behind a provider-neutral `AIProvider` port |
+| [004 AI Prompt and Response Retention](adr/004-ai-prompt-response-retention.md) | Raw AI prompts/responses retained for 30 days, then deleted |
+| [005 Demo Currency](adr/005-demo-currency.md) | NGN is the canonical demo/seed currency |
+| [006 Seed Data Shape](adr/006-seed-data-shape.md) | Deterministic, minimal, relationally valid, idempotent development-only seed |
+
+## Domain terminology
+
+See [TERMINOLOGY.md](TERMINOLOGY.md) for the canonical API/domain vocabulary, exact spellings, states, and value meanings.
+
+## Implementation rule
+
+When an implementation decision conflicts with an ADR, the ADR must be updated before implementation proceeds. These ADRs are the source of truth for the MVP backend contracts.

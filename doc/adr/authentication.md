@@ -1,84 +1,73 @@
-"""
- use JWT authentication
-  JSON web Token 
- use this authentication because its widely use and it accept multiple user at a time. I will prescribe this authentication method because its the most use and it issues a signed access token after successful authentication. Morealso, the authentication logic will remain isolated from the application/domain modules so that the authentication mechanism can be replaced later without changing business logic.
+## Context
 
- pros:
- -Well suited to REST APIS
- -Stateless authentication 
- -Easy for frontend and mobile clients to consume.
+The subscription tracker needs authenticated access to user-owned subscriptions, transactions, analyses, recommendations, and decisions. The MVP must identify the caller and enforce ownership without coupling domain logic to a particular authentication vendor.
 
- Cons:
- - Token revocation requires additional handling
- - Tokens must be stored securely by clients.
+The backend remains a **modular monolith**. Authentication is an external/infrastructure concern and must be isolated behind a replaceable port/adapter.
 
- We can also consider Third-party authentication if we ever use an external API for the project.
+## Options considered
 
- PROS:
- - Less authentication code to maintain
- - can support social login
+1. **Application-managed server sessions**
+   - Simple for a traditional web application.
+   - Couples clients to server-side session state and a session store.
 
-CONS:
-- Adds external dependency
-- More configuration for the MVP
-- Authentication becomes coupled to a provider
+2. **JWT bearer authentication**
+   - Stateless request authentication.
+   - Works well for web and API clients.
+   - Requires careful signature/issuer/audience validation and token expiry handling.
 
-The authentication module will issue signed access tokens after successful
-authentication.
+3. **Vendor-specific authentication SDK throughout the application**
+   - Fast initial integration.
+   - Creates direct vendor coupling and leaks external concepts into application/domain code.
 
-Protected API endpoints will require:
+## Decision
 
-    Authorization: Bearer <token>
+The MVP uses **JWT bearer authentication**.
 
-The authenticated user's identity will be available to the application through
-a request authentication context.
+The application authenticates requests using a provider-neutral `AuthenticationPort`. An infrastructure adapter validates JWTs and exposes a normalized authenticated principal:
 
-Authentication concerns will remain inside the authentication module. Domain
-modules must not contain JWT-specific logic.
+```text
+AuthenticatedPrincipal
+- user_id
+- issuer
+- token_id (optional)
+```
 
-The domain/application layer should depend on the concept of an authenticated
-user rather than directly depending on JWT implementation details.
+The application/domain layer uses `user_id` and authorization rules only. It does not import an authentication SDK, JWT library, OAuth vendor type, or identity-provider model.
 
-## Token Policy
+Token requirements:
 
-The exact expiration values may be configured separately, but the
-implementation must support:
+- Signature must be validated.
+- `exp` must be enforced.
+- `iss` and `aud` must be validated when configured.
+- The authenticated principal must map to an existing application `User`.
+- User-owned resources are authorized by that `user_id`.
 
-- Token expiration.
-- Signature validation.
-- User identity extraction.
-- Rejection of malformed tokens.
-- Rejection of expired tokens.
-- Rejection of invalid signatures.
+The MVP may use a configured JWT issuer/key set. Replacing that issuer requires changing only the authentication adapter/configuration, not domain logic.
 
-Refresh tokens may be introduced later if required. They are not required to
-block the MVP.
+## Consequences
 
-## Authorization
+### Positive
 
-Authentication and authorization are separate concerns.
+- Clear API authentication contract.
+- Stateless request validation.
+- External identity providers can be replaced without changing domain models.
+- Authorization remains based on the application's `User` entity.
+- Preserves the modular-monolith architecture.
 
-Authentication answers:
+### Negative
 
-    "Who is making this request?"
+- JWT validation and key rotation must be implemented/configured correctly.
+- Revocation before token expiry is more complex than server-side sessions.
+- A concrete identity provider still has to be configured for deployed environments.
 
-Authorization answers:
+## Implementation boundary
 
-    "Is this user allowed to perform this operation?"
+```text
+HTTP/API
+  -> AuthenticationPort
+      -> JWT authentication adapter
+  -> Application services
+  -> Domain modules
+```
 
-Every user-owned resource must be associated with an owner/user identity.
-
-For example:
-
-    User
-      |
-      +-- Project
-            |
-            +-- Asset
-            |
-            +-- Job
-
-Application services must verify ownership before allowing operations on
-user-owned resources.
-
-"""
+No authentication SDK or provider-specific identity object may be imported by domain modules.
