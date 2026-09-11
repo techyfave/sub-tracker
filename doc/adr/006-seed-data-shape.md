@@ -1,3 +1,7 @@
+# ADR-006: Seed Data Shape
+
+**Status:** Accepted
+
 ## Context
 
 The MVP needs predictable data for local development, API testing, demos, and integration tests. Earlier task-tracker concepts such as `Tracker -> Project -> Task -> Subtask` do not belong to the subscription-tracker domain.
@@ -28,17 +32,30 @@ The MVP uses a **deterministic, minimal, relationally valid, idempotent, develop
 
 ```text
 User
+ ├── Consent
  ├── ProviderConnection
  └── Subscription
        ├── Plan
        ├── Transaction
-       ├── UsageEvidence
+       ├── UsageEvent
        └── Analysis
               └── Recommendation
                      └── RecommendationEvidence
 
 Recommendation
- └── Decision
+ ├── RecommendationDecision
+ │     └── Action
+ ├── SavingsRecord
+ └── Conversation
+       └── Message
+
+PromptVersion
+ └── Analysis
+
+EvaluationRun
+ └── EvaluationResult
+
+AuditEvent
 ```
 
 More precisely:
@@ -46,12 +63,19 @@ More precisely:
 - `User 1 -> many Subscription`
 - `Plan 1 -> many Subscription`
 - `Subscription 1 -> many Transaction`
-- `Subscription 1 -> many UsageEvidence`
+- `Subscription 1 -> many UsageEvent`
 - `Subscription 1 -> many Analysis`
 - `Analysis 1 -> many Recommendation`
 - `Recommendation 1 -> many RecommendationEvidence`
-- `Recommendation 0..1 -> many Decision` over time as the domain evolves, with the initial seed using one decision per seeded recommendation where useful.
+- `Recommendation 1 -> zero or many RecommendationDecision` over time, with the initial seed using one decision per seeded recommendation where useful.
 - `User 1 -> many ProviderConnection`
+- `User 1 -> many Consent`
+- `RecommendationDecision 1 -> zero or many Action`
+- `Recommendation or Action 1 -> zero or many SavingsRecord`
+- `Recommendation 1 -> zero or one Conversation -> many Message`
+- `PromptVersion 1 -> many Analysis`
+- `EvaluationRun 1 -> many EvaluationResult`
+- `AuditEvent` references the relevant actor/resource without becoming mutable domain state.
 - A `ProviderConnection` identifies an external integration configuration; it does not replace `Provider`.
 
 ### Minimum seeded dataset
@@ -64,11 +88,18 @@ The seed should contain at least:
 - 3 Plans
 - 4 Subscriptions covering different statuses
 - 4 Transactions using NGN
-- 4 UsageEvidence records
+- 4 UsageEvent records
 - 3 Analyses covering meaningful outcomes
 - 3 Recommendations
 - 3 RecommendationEvidence records
-- 2 Decisions
+- 2 RecommendationDecisions
+- 2 Consents covering granted and revoked states
+- 2 Actions covering simulated success and pending execution
+- 2 SavingsRecords distinguishing estimated and verified savings
+- 1 Conversation with 2 Messages
+- 1 PromptVersion referenced by the seeded Analyses
+- 1 EvaluationRun with representative EvaluationResults
+- representative append-only AuditEvents
 
 Exact fixture IDs and timestamps must be fixed rather than generated randomly.
 

@@ -1,4 +1,6 @@
-Accepted
+# ADR-003: AI Provider Boundary
+
+**Status:** Accepted
 
 ## Context
 The subscription tracker will use an AI provider to turn usage evidence into an **analysis**, and analyses into **recommendations**. Three candidate
@@ -12,7 +14,7 @@ providers were evaluated:
   environment doesn't reliably have.
 
 Previously this decision listed all three options without choosing one,
-which left the analysis workflow (and ADR 0002's `run-analysis` job)
+which left the analysis workflow (and ADR-002's `run-analysis` job)
 unimplementable. This revision makes the decision and defines the
 integration boundary.
 
@@ -39,7 +41,7 @@ local GPU/CPU resources, and low operational overhead.
 
   ```
   interface AIProviderPort {
-    analyze(input: UsageEvidenceBundle): Promise<AnalysisResult>
+    analyze(input: UsageEventBundle): Promise<AnalysisResult>
   }
   ```
 
@@ -48,11 +50,12 @@ local GPU/CPU resources, and low operational overhead.
   every adapter must produce regardless of the underlying vendor's native
   response format.
 
-- Three adapters implement `AIProviderPort`: `GroqAdapter` (MVP default),
-  `GeminiAdapter`, `JanAdapter`. Selection happens in composition/wiring
-  code based on `AI_PROVIDER`; domain and application modules never
-  branch on provider identity.
-- The `run-analysis` background job (ADR 0002) calls `AIProviderPort`, not
+- `GroqAdapter` implements `AIProviderPort` for the MVP. Additional adapters,
+  such as `GeminiAdapter` or `JanAdapter`, may be added when those providers
+  are supported. Selection happens in composition/wiring code based on
+  `AI_PROVIDER`; domain and application modules never branch on provider
+  identity.
+- The `run-analysis` background job (ADR-002) calls `AIProviderPort`, not
   a specific vendor client.
 
 ## Consequences
@@ -74,5 +77,11 @@ local GPU/CPU resources, and low operational overhead.
   modes) are real and not fully hidden by the interface; adapters must
   normalize errors and timeouts consistently so callers see uniform
   failure semantics.
-- Maintaining three adapters (even if only one ships wired up by default)
-  is ongoing maintenance surface, not a one-time cost.
+- Every supported provider adds an adapter and a provider-specific contract
+  test suite that must be maintained.
+
+## Architectural boundary
+
+The AI integration remains infrastructure inside the **modular monolith**.
+It does not introduce a separate AI service or allow provider SDK types to
+cross into application or domain modules.

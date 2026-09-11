@@ -1,3 +1,7 @@
+# ADR-001: Authentication Approach
+
+**Status:** Accepted
+
 ## Context
 
 The subscription tracker needs authenticated access to user-owned subscriptions, transactions, analyses, recommendations, and decisions. The MVP must identify the caller and enforce ownership without coupling domain logic to a particular authentication vendor.

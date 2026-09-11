@@ -12,7 +12,7 @@ The MVP backend is a **modular monolith**: one deployable application with expli
 |---|---|
 | [001 Authentication Approach](adr/001-authentication-approach.md) | JWT bearer authentication behind an authentication port |
 | [002 Background Job Library](adr/002-background-job-library.md) | Celery with Redis behind a job/queue port |
-| [003 AI Provider Boundary](adr/003-ai-provider-boundary.md) | Gemini is the MVP baseline behind a provider-neutral `AIProvider` port |
+| [003 AI Provider Boundary](adr/003-ai-provider-boundary.md) | Groq is the MVP baseline behind a provider-neutral `AIProviderPort` |
 | [004 AI Prompt and Response Retention](adr/004-ai-prompt-response-retention.md) | Raw AI prompts/responses retained for 30 days, then deleted |
 | [005 Demo Currency](adr/005-demo-currency.md) | NGN is the canonical demo/seed currency |
 | [006 Seed Data Shape](adr/006-seed-data-shape.md) | Deterministic, minimal, relationally valid, idempotent development-only seed |

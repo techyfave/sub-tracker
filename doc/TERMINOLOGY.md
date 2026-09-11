@@ -49,19 +49,27 @@ A monetary event associated with a Subscription.
 - A Transaction has an explicit amount and currency.
 - Do not use `payment` when the domain means a recorded monetary transaction.
 
-### Usage Evidence
-A factual observation supporting an analysis, such as usage count, last-used date, or source-reported activity.
+### Consent
+A versioned grant by a User allowing specified provider data access or processing.
 
-- Canonical singular: `UsageEvidence`
-- Collection: `usage_evidence`
-- Evidence is factual input; it is not an AI recommendation.
+- Canonical singular: `Consent`
+- Collection: `consents`
+- Revocation ends future use under that grant; it does not rewrite audit history.
+
+### Usage Event
+A timestamped factual observation used as analysis evidence, such as activity, a usage count, or a source-reported occurrence.
+
+- Canonical singular: `UsageEvent`
+- Collection: `usage_events`
+- A bundle or projection of UsageEvents may be called usage evidence in prose, but the persisted/API entity is `UsageEvent`.
+- Usage Events are factual input; they are not AI recommendations.
 
 ### Analysis
 A domain/application result that evaluates subscription value or usage using available evidence.
 
 - Canonical singular: `Analysis`
 - Collection: `analyses`
-- An Analysis may reference a Subscription and supporting UsageEvidence.
+- An Analysis may reference a Subscription and supporting UsageEvents.
 - AI-generated reasoning is stored as content associated with the analysis, subject to ADR-004.
 
 ### Recommendation
@@ -79,18 +87,51 @@ The evidence or rationale that supports a Recommendation.
 - Collection: `recommendation_evidence`
 - It links the recommendation to observable facts or analysis output.
 
-### Decision
+### Recommendation Decision
 The user's chosen outcome after considering a Recommendation.
 
-- Canonical singular: `Decision`
-- Collection: `decisions`
-- A Decision records what the user decided; it is not the same as a Recommendation.
+- Canonical singular: `RecommendationDecision`
+- Collection: `recommendation_decisions`
+- A RecommendationDecision records what the user decided; it is not the same as a Recommendation.
 
 ### Action
-The operational verb represented by a Recommendation or Decision, such as `keep`, `cancel`, `downgrade`, or `review`.
+An immutable record of a simulated or real operation requested after a RecommendationDecision, such as a cancellation or plan change.
 
-- Canonical field/value concept: `action`
-- An Action is not a separate top-level entity in the MVP unless implementation later requires one.
+- Canonical singular: `Action`
+- Collection: `actions`
+- An Action has its own lifecycle and idempotency key.
+- Recommendation values such as `keep`, `cancel`, `downgrade`, or `review` use the field `recommended_action`; they are not Action records.
+
+### Savings Record
+A calculated or verified monetary benefit associated with a Recommendation or completed Action.
+
+- Canonical singular: `SavingsRecord`
+- Collection: `savings_records`
+- Estimated and verified savings must remain distinguishable.
+
+### Conversation and Message
+A Conversation is the bounded discussion associated with a Recommendation; a Message is one ordered entry in that Conversation.
+
+- Canonical collections: `conversations`, `messages`
+- Messages do not replace retained raw AI provider payloads and remain subject to applicable retention rules.
+
+### Prompt Version
+Immutable metadata identifying the reviewed prompt contract used for an Analysis.
+
+- Canonical singular: `PromptVersion`
+- Collection: `prompt_versions`
+
+### Evaluation Run and Evaluation Result
+An EvaluationRun records one execution of a versioned evaluation suite; each EvaluationResult records an individual scored or classified outcome.
+
+- Canonical collections: `evaluation_runs`, `evaluation_results`
+
+### Audit Event
+An append-only record of a significant security, decision, or action event.
+
+- Canonical singular: `AuditEvent`
+- Collection: `audit_events`
+- Audit Events cannot be updated through normal repositories.
 
 ## Processing concepts
 
@@ -151,10 +192,10 @@ A Provider Connection belongs to a user's external data integration. An AI Provi
 ## Money
 
 ### Money
-A monetary value represented by an integer minor-unit amount plus an explicit Currency.
+A monetary value represented by an exact decimal amount plus an explicit Currency.
 
-- Canonical fields: `amount_minor`, `currency`
-- `amount_minor` avoids floating-point monetary calculations.
+- Canonical fields: `amount`, `currency`
+- `amount` uses an exact decimal database/application type, never binary floating point.
 
 ### Currency
 An ISO 4217 currency code.
@@ -173,11 +214,26 @@ The currency used by deterministic development seed data.
 - User -> Subscription: one User can have many Subscriptions.
 - Plan -> Subscription: one Plan can have many Subscriptions.
 - Subscription -> Transaction: one Subscription can have many Transactions.
-- Subscription -> UsageEvidence: one Subscription can have many UsageEvidence records.
+- Subscription -> UsageEvent: one Subscription can have many UsageEvent records.
 - Subscription -> Analysis: one Subscription can have many Analyses over time.
 - Analysis -> Recommendation: an Analysis can produce zero or more Recommendations.
 - Recommendation -> RecommendationEvidence: a Recommendation can have zero or more supporting evidence records.
-- Recommendation -> Decision: a user may record a Decision based on a Recommendation.
+- Recommendation -> RecommendationDecision: a user may record a RecommendationDecision based on a Recommendation.
+- RecommendationDecision -> Action: an accepted RecommendationDecision may result in one or more idempotent Actions.
+- Recommendation/Action -> SavingsRecord: savings remain traceable to their source.
+- Recommendation -> Conversation -> Message: follow-up discussion remains bounded to its recommendation.
+- Analysis -> PromptVersion: each run records the prompt version used.
+- EvaluationRun -> EvaluationResult: a run contains one or more results.
+- Significant domain operations -> AuditEvent: security-sensitive and state-changing operations emit append-only audit history.
 - User -> ProviderConnection: one User can have many ProviderConnections.
 
 These relationships are the agreed MVP vocabulary and should be reflected consistently in API schemas, database models, tests, and documentation.
+
+## Cross-cutting invariants
+
+- Every user-owned record has an explicit `user_id` ownership key and an ownership-query index.
+- Persisted timestamps are UTC-aware; API timestamps use ISO 8601 with an explicit UTC offset.
+- Recommendation records are immutable snapshots. Corrections or reanalysis create new versions rather than updating a snapshot through a normal repository.
+- AuditEvent records are append-only and cannot be updated or deleted through normal repositories.
+- External authentication, job, AI, financial-data, and future exchange-rate integrations remain infrastructure adapters behind application-owned ports.
+- All modules remain within one deployable modular monolith unless a later ADR supersedes that decision.

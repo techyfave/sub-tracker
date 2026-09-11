@@ -1,8 +1,16 @@
+# ADR-004: AI Prompt and Response Retention
+
+**Status:** Accepted
+
 ## Context
 
 The subscription tracker sends application context and prompts to an external AI provider and receives AI responses. These prompts and responses may contain user-specific subscription information and must have an explicit retention policy.
 
-This ADR concerns **AI prompts and AI responses**,
+This ADR concerns **AI prompts and AI responses**.
+
+The retention implementation is an infrastructure policy inside the
+**modular monolith**. Storage and deletion mechanisms remain replaceable
+behind application-owned interfaces.
 
 ## Options considered
 

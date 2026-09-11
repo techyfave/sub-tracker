@@ -1,3 +1,7 @@
+# ADR-002: Background Job Library
+
+**Status:** Accepted
+
 ## Context
 
 The subscription tracker performs work that should not block HTTP requests, including AI analysis and potentially provider synchronization. The MVP needs a reliable background-job mechanism while preserving the modular-monolith boundary.
