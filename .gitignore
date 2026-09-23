@@ -6,6 +6,7 @@ __pycache__/
 # Python tooling and environments
 .venv/
 .pytest_cache/
+pytest-cache-files-*/
 .mypy_cache/
 .ruff_cache/
 .coverage
