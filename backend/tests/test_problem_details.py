@@ -15,9 +15,7 @@ async def test_validation_error_uses_problem_details(
     )
 
     assert response.status_code == 422
-    assert response.headers["content-type"].startswith(
-        "application/problem+json"
-    )
+    assert response.headers["content-type"].startswith("application/problem+json")
 
     body = response.json()
 
