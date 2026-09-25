@@ -5,9 +5,9 @@ Revises:
 Create Date: 2026-09-03 10:38:13.343248
 
 Minimal tables to unblock issue #5 (auth). Scoped to what login/refresh need,
-not the full `users` entity from docs/architecture/data-and-api.md — issue
-#3's migration should ALTER this table to add remaining columns rather than
-recreate it. See docs/architecture/decisions/0001-authentication-approach.md.
+not the full `users` entity described by issue #3 — issue #3's migration
+should ALTER this table to add remaining columns rather than recreate it.
+See doc/adr/001-authentication-approach.md for the authentication approach.
 """
 
 from collections.abc import Sequence

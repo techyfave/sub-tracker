@@ -1,12 +1,12 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api.problem_details import validation_exception_handler
+from app.api.problem_details import http_exception_handler, validation_exception_handler
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.infrastructure.database.session import close_database
@@ -46,6 +46,18 @@ def create_app() -> FastAPI:
     application.add_exception_handler(
         RequestValidationError,
         validation_exception_handler,
+    )
+
+    # Without this, HTTPException(detail={...}) raised via raise_problem()
+    # (used throughout app/api/v1/endpoints/auth.py) falls back to FastAPI's
+    # default handler, which nests the problem body under a "detail" key and
+    # serves it as application/json — silently breaking the flat
+    # application/problem+json contract issue #2 established. Registering
+    # http_exception_handler here is what makes raise_problem() actually
+    # produce Problem Details on the wire, not just in source.
+    application.add_exception_handler(
+        HTTPException,
+        http_exception_handler,
     )
 
     application.include_router(

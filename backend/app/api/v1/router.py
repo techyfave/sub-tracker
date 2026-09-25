@@ -6,5 +6,5 @@ from app.api.v1.endpoints.health import router as health_router
 router = APIRouter()
 router.include_router(health_router, prefix="/health", tags=["health"])
 # No prefix here: auth_router defines its own full paths (/auth/register,
-# /auth/login, /auth/refresh, and top-level /me per docs/architecture/data-and-api.md).
+# /auth/login, /auth/refresh, and top-level /me — see issue #5's acceptance criteria).
 router.include_router(auth_router, tags=["auth"])
