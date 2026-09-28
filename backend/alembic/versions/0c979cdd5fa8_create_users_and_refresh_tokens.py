@@ -7,8 +7,8 @@ Create Date: 2026-09-03 10:38:13.343248
 Minimal tables to unblock issue #5 (auth). Scoped to what login/refresh need,
 not the full `users` entity described by issue #3 — issue #3's migration
 should ALTER this table to add remaining columns rather than recreate it.
-See doc/adr/001-authentication-approach.md for the authentication approach.
-"""
+See doc/adr/001-authentication-approach.md and
+doc/adr/007-application-managed-credentials-and-refresh-rotation.md.
 
 from collections.abc import Sequence
 

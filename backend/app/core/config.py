@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6379/0"
 
-    # Auth (issue #5), per ADR-001 (doc/adr/001-authentication-approach.md):
-    # stateless JWT bearer access tokens + rotating opaque refresh tokens.
+    # Auth (issue #5). JWT bearer access tokens: ADR-001. Application-managed
+    # Argon2id passwords and rotating opaque refresh tokens: ADR-007
+    # (doc/adr/007-application-managed-credentials-and-refresh-rotation.md).
     secret_key: str = "dev-secret-change-me-please-at-least-32-bytes-long"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
