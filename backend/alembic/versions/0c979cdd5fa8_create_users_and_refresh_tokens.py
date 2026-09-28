@@ -9,7 +9,6 @@ not the full `users` entity described by issue #3 — issue #3's migration
 should ALTER this table to add remaining columns rather than recreate it.
 See doc/adr/001-authentication-approach.md and
 doc/adr/007-application-managed-credentials-and-refresh-rotation.md.
-"""
 
 from collections.abc import Sequence
 
