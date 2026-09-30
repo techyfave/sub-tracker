@@ -18,7 +18,6 @@ from app.infrastructure.database.models.core import (
     RecommendationModel,
     SavingsKind,
     SavingsRecordModel,
-    SubscriptionModel,
     SubscriptionStatus,
     TransactionModel,
     UsageEventModel,
@@ -26,6 +25,7 @@ from app.infrastructure.database.models.core import (
     prevent_immutable_update,
 )
 from app.infrastructure.database.models.refresh_token import RefreshTokenModel
+from app.infrastructure.database.models.subscription import SubscriptionModel
 from app.infrastructure.database.models.user import UserModel
 
 __all__ = [

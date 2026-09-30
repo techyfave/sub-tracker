@@ -143,6 +143,7 @@ class SubscriptionModel(UUIDPrimaryKeyMixin, TimestampMixin, UserOwnedMixin, Bas
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     renewal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TransactionModel(UUIDPrimaryKeyMixin, TimestampMixin, UserOwnedMixin, Base):
