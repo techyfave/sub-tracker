@@ -820,13 +820,13 @@ async def seed_actions(session: AsyncSession) -> None:
 
 
 async def seed_savings_records(session: AsyncSession) -> None:
-    """Create deterministic estimated and verified savings records."""
+    """Create deterministic estimated savings records."""
 
     savings_records = [
         SavingsRecordModel(
             id=uuid.UUID("64000000-0000-4000-8000-000000000001"),
             user_id=KEEP_USER_ID,
-            action_id=uuid.UUID("63000000-0000-4000-8000-000000000002"),
+            action_id=None,
             recommendation_id=DOWNGRADE_RECOMMENDATION_ID,
             kind=SavingsKind.ESTIMATED,
             amount=Decimal("4000.00"),
@@ -836,23 +836,6 @@ async def seed_savings_records(session: AsyncSession) -> None:
                 "from_plan_amount": "10000.00",
                 "to_plan_amount": "6000.00",
                 "method": "plan_price_difference",
-            },
-            created_at=SEED_TIMESTAMP,
-            updated_at=SEED_TIMESTAMP,
-        ),
-        SavingsRecordModel(
-            id=uuid.UUID("64000000-0000-4000-8000-000000000002"),
-            user_id=KEEP_USER_ID,
-            action_id=None,
-            recommendation_id=DOWNGRADE_RECOMMENDATION_ID,
-            kind=SavingsKind.VERIFIED,
-            amount=Decimal("4000.00"),
-            currency=CURRENCY,
-            period="monthly",
-            calculation_json={
-                "verified": True,
-                "verified_amount": "4000.00",
-                "method": "confirmed_billing_difference",
             },
             created_at=SEED_TIMESTAMP,
             updated_at=SEED_TIMESTAMP,
@@ -889,7 +872,7 @@ async def seed_conversation(session: AsyncSession) -> None:
             updated_at=SEED_TIMESTAMP,
         ),
         MessageModel(
-            id=uuid.UUID("66000000-0000-4000-8000-000000000002"),
+	    id=uuid.UUID("66000000-0000-4000-8000-000000000002"),
             user_id=REVIEW_USER_ID,
             conversation_id=conversation_id,
             role="assistant",
