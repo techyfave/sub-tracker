@@ -6,12 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.auth.service import AuthService
-from app.domain.users.entities import RefreshToken
-from app.domain.users.exceptions import (
-    InvalidCredentialsError,
-    RefreshTokenInvalidError,
-    RefreshTokenReusedError,
-)
+from app.domain.users.exceptions import InvalidCredentialsError, RefreshTokenInvalidError
 from app.infrastructure.database.repositories.refresh_token_repository import (
     SqlAlchemyRefreshTokenRepository,
 )
@@ -94,44 +89,3 @@ async def test_login_deactivated_user_is_invalid_credentials(db_session: AsyncSe
 
     with pytest.raises(InvalidCredentialsError):
         await service.login(email="disabled@example.com", password="correct-horse")
-
-
-class _RacedRefreshTokenRepository(SqlAlchemyRefreshTokenRepository):
-    """Simulates losing a race: a competing request consumes the credential in
-    the window between this request's read and its write. The read still returns
-    the (now stale) unrevoked snapshot, exactly as it would under concurrency."""
-
-    async def get_by_token_hash(self, token_hash: str) -> RefreshToken | None:
-        stale = await super().get_by_token_hash(token_hash)
-        if stale is not None:
-            await self.revoke(stale.id, revoked_at=datetime(2026, 1, 1, tzinfo=UTC))
-        return stale
-
-
-async def test_refresh_that_loses_a_race_is_rejected_and_revokes_the_family(
-    db_session: AsyncSession,
-) -> None:
-    from sqlalchemy import func, select
-
-    from app.infrastructure.database.models.refresh_token import RefreshTokenModel
-
-    clock = _FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
-    service = _build_service(db_session, clock=clock, refresh_ttl=timedelta(days=30))
-    await service.register(email="race@example.com", password="correct-horse")
-    result = await service.login(email="race@example.com", password="correct-horse")
-
-    racing = _build_service(db_session, clock=clock, refresh_ttl=timedelta(days=30))
-    racing._refresh_tokens = _RacedRefreshTokenRepository(db_session)  # noqa: SLF001
-
-    with pytest.raises(RefreshTokenReusedError):
-        await racing.refresh(raw_refresh_token=result.tokens.refresh_token)
-
-    # No replacement was minted and nothing from the family remains usable.
-    total = await db_session.scalar(select(func.count()).select_from(RefreshTokenModel))
-    usable = await db_session.scalar(
-        select(func.count())
-        .select_from(RefreshTokenModel)
-        .where(RefreshTokenModel.revoked_at.is_(None))
-    )
-    assert total == 1
-    assert usable == 0

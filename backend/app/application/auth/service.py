@@ -94,28 +94,8 @@ class AuthService:
             await self._refresh_tokens.revoke(stored.id, revoked_at=now)
             raise RefreshTokenInvalidError
 
-        # The read above is only used to classify the failure mode. The actual
-        # consumption is a single atomic operation, so two concurrent requests
-        # presenting the same credential cannot both succeed.
-        raw_refresh_token_next = self._refresh_token_generator.generate()
-        replacement = await self._refresh_tokens.rotate(
-            consumed_token_id=stored.id,
-            revoked_at=now,
-            user_id=user.id,
-            new_token_hash=self._refresh_token_generator.hash(raw_refresh_token_next),
-            new_expires_at=now + self._refresh_token_ttl,
-        )
-        if replacement is None:
-            # Someone else consumed this credential between our read and our
-            # write: to us it is indistinguishable from a replay, so apply the
-            # same durable family revocation.
-            await self._refresh_tokens.revoke_all_for_user(user.id, revoked_at=now)
-            raise RefreshTokenReusedError
-
-        tokens = TokenPair(
-            access_token=self._access_tokens.issue(user_id=user.id),
-            refresh_token=raw_refresh_token_next,
-        )
+        await self._refresh_tokens.revoke(stored.id, revoked_at=now)
+        tokens = await self._issue_tokens(user)
         return AuthResult(user=user, tokens=tokens)
 
     async def _issue_tokens(self, user: User) -> TokenPair:

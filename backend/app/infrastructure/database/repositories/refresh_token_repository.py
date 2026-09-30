@@ -49,45 +49,6 @@ class SqlAlchemyRefreshTokenRepository:
         model = result.scalar_one_or_none()
         return _to_entity(model) if model is not None else None
 
-    async def rotate(
-        self,
-        *,
-        consumed_token_id: UUID,
-        revoked_at: datetime,
-        user_id: UUID,
-        new_token_hash: str,
-        new_expires_at: datetime,
-    ) -> RefreshToken | None:
-        # Atomic compare-and-set: the WHERE clause makes "still unrevoked" part
-        # of the write itself. In PostgreSQL a concurrent UPDATE of the same row
-        # blocks on the row lock until the first transaction commits, then
-        # re-checks the condition against the committed row and matches nothing.
-        # So of N simultaneous callers, exactly one gets a row back.
-        consumed = await self._session.execute(
-            update(RefreshTokenModel)
-            .where(RefreshTokenModel.id == consumed_token_id)
-            .where(RefreshTokenModel.revoked_at.is_(None))
-            .values(revoked_at=revoked_at)
-            .returning(RefreshTokenModel.id)
-        )
-        if consumed.scalar_one_or_none() is None:
-            await self._session.rollback()
-            return None
-
-        replacement = RefreshTokenModel(
-            user_id=user_id, token_hash=new_token_hash, expires_at=new_expires_at
-        )
-        self._session.add(replacement)
-        await self._session.flush()
-        await self._session.refresh(replacement)
-        entity = _to_entity(replacement)
-
-        # Consume + replacement commit together: a crash can never leave the
-        # old credential revoked with no replacement (or two live successors),
-        # and the new credential is durable before it is handed to the client.
-        await self._session.commit()
-        return entity
-
     async def revoke(self, token_id: UUID, *, revoked_at: datetime) -> None:
         await self._session.execute(
             update(RefreshTokenModel)
