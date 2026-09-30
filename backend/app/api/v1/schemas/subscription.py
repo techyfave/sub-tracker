@@ -1,70 +1,45 @@
 import uuid
-from datetime import date, datetime
-from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from datetime import datetime
 
-from app.domain.subscriptions.entities import BillingCadence, SubscriptionStatus
+from pydantic import BaseModel, Field
 
-
-class PlanAlternativeSchema(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    price: float = Field(..., ge=0)
-    currency: str = Field(..., min_length=3, max_length=3)
-    billing_cadence: BillingCadence
-    notes: Optional[str] = None
-
-    @field_validator("currency")
-    @classmethod
-    def validate_currency(cls, v: str) -> str:
-        return v.upper()
+from app.api.v1.schemas.common import PaginatedResponse
+from app.domain.subscriptions.entities import SubscriptionStatus
 
 
 class SubscriptionCreateRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    price: float = Field(..., ge=0)
-    currency: str = Field(..., min_length=3, max_length=3)
-    billing_cadence: BillingCadence
-    renewal_date: date
-    plan_alternatives: list[PlanAlternativeSchema] = Field(default_factory=list)
-
-    @field_validator("currency")
-    @classmethod
-    def validate_currency(cls, v: str) -> str:
-        return v.upper()
+    plan_id: uuid.UUID
+    name: str = Field(..., min_length=1, max_length=200)
+    status: SubscriptionStatus = SubscriptionStatus.ACTIVE
+    provider_connection_id: uuid.UUID | None = None
+    started_at: datetime | None = None
+    renewal_at: datetime | None = None
+    ended_at: datetime | None = None
 
 
 class SubscriptionUpdateRequest(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    price: Optional[float] = Field(None, ge=0)
-    currency: Optional[str] = Field(None, min_length=3, max_length=3)
-    billing_cadence: Optional[BillingCadence] = None
-    renewal_date: Optional[date] = None
-    status: Optional[SubscriptionStatus] = None
-    plan_alternatives: Optional[list[PlanAlternativeSchema]] = None
-
-    @field_validator("currency")
-    @classmethod
-    def validate_currency(cls, v: Optional[str]) -> Optional[str]:
-        return v.upper() if v else None
+    plan_id: uuid.UUID | None = None
+    provider_connection_id: uuid.UUID | None = None
+    name: str | None = Field(None, min_length=1, max_length=200)
+    status: SubscriptionStatus | None = None
+    started_at: datetime | None = None
+    renewal_at: datetime | None = None
+    ended_at: datetime | None = None
 
 
 class SubscriptionResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
+    plan_id: uuid.UUID
+    provider_connection_id: uuid.UUID | None
     name: str
-    price: float
-    currency: str
-    billing_cadence: BillingCadence
-    renewal_date: date
     status: SubscriptionStatus
-    plan_alternatives: list[PlanAlternativeSchema]
+    started_at: datetime | None
+    renewal_at: datetime | None
+    ended_at: datetime | None
     created_at: datetime
     updated_at: datetime
-    deleted_at: Optional[datetime] = None
+    deleted_at: datetime | None = None
 
 
-class PaginatedSubscriptionResponse(BaseModel):
-    items: list[SubscriptionResponse]
-    total: int
-    page: int
-    page_size: int
+SubscriptionListResponse = PaginatedResponse[SubscriptionResponse]

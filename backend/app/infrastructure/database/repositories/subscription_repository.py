@@ -1,12 +1,17 @@
 import uuid
-from typing import Optional
-from datetime import datetime, timezone
-from sqlalchemy import select, func, and_
+from datetime import UTC, datetime
+
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.subscriptions.entities import Subscription, PlanAlternative, BillingCadence, SubscriptionStatus
+from app.domain.subscriptions.entities import Subscription, SubscriptionStatus
 from app.domain.subscriptions.repositories import SubscriptionRepository
-from app.infrastructure.database.models.subscription import SubscriptionModel
+from app.infrastructure.database.models.core import (
+    SubscriptionModel,
+)
+from app.infrastructure.database.models.core import (
+    SubscriptionStatus as SubscriptionModelStatus,
+)
 
 
 class SqlAlchemySubscriptionRepository(SubscriptionRepository):
@@ -14,52 +19,32 @@ class SqlAlchemySubscriptionRepository(SubscriptionRepository):
         self.session = session
 
     def _to_entity(self, model: SubscriptionModel) -> Subscription:
-        plan_alts = [
-            PlanAlternative(
-                name=alt["name"],
-                price=alt["price"],
-                currency=alt["currency"],
-                billing_cadence=BillingCadence(alt["billing_cadence"]),
-                notes=alt.get("notes"),
-            )
-            for alt in (model.plan_alternatives or [])
-        ]
         return Subscription(
             id=model.id,
             user_id=model.user_id,
+            plan_id=model.plan_id,
             name=model.name,
-            price=model.price,
-            currency=model.currency,
-            billing_cadence=BillingCadence(model.billing_cadence),
-            renewal_date=model.renewal_date,
             status=SubscriptionStatus(model.status),
-            plan_alternatives=plan_alts,
+            provider_connection_id=model.provider_connection_id,
+            started_at=model.started_at,
+            renewal_at=model.renewal_at,
+            ended_at=model.ended_at,
             created_at=model.created_at,
             updated_at=model.updated_at,
             deleted_at=model.deleted_at,
         )
 
     def _to_model(self, entity: Subscription) -> SubscriptionModel:
-        plan_alts = [
-            {
-                "name": alt.name,
-                "price": alt.price,
-                "currency": alt.currency,
-                "billing_cadence": alt.billing_cadence.value,
-                "notes": alt.notes,
-            }
-            for alt in entity.plan_alternatives
-        ]
         return SubscriptionModel(
             id=entity.id,
             user_id=entity.user_id,
+            plan_id=entity.plan_id,
+            provider_connection_id=entity.provider_connection_id,
             name=entity.name,
-            price=entity.price,
-            currency=entity.currency,
-            billing_cadence=entity.billing_cadence.value,
-            renewal_date=entity.renewal_date,
-            status=entity.status.value,
-            plan_alternatives=plan_alts,
+            status=entity.status,
+            started_at=entity.started_at,
+            renewal_at=entity.renewal_at,
+            ended_at=entity.ended_at,
             created_at=entity.created_at,
             updated_at=entity.updated_at,
             deleted_at=entity.deleted_at,
@@ -67,12 +52,18 @@ class SqlAlchemySubscriptionRepository(SubscriptionRepository):
 
     async def save(self, subscription: Subscription) -> Subscription:
         model = self._to_model(subscription)
+
         self.session.add(model)
         await self.session.commit()
         await self.session.refresh(model)
+
         return self._to_entity(model)
 
-    async def get_by_id(self, subscription_id: uuid.UUID, user_id: uuid.UUID) -> Optional[Subscription]:
+    async def get_by_id(
+        self,
+        subscription_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> Subscription | None:
         query = select(SubscriptionModel).where(
             and_(
                 SubscriptionModel.id == subscription_id,
@@ -80,41 +71,49 @@ class SqlAlchemySubscriptionRepository(SubscriptionRepository):
                 SubscriptionModel.deleted_at.is_(None),
             )
         )
+
         result = await self.session.execute(query)
         model = result.scalar_one_or_none()
-        return self._to_entity(model) if model else None
+
+        if model is None:
+            return None
+
+        return self._to_entity(model)
 
     async def list_by_user(
         self,
         user_id: uuid.UUID,
         skip: int = 0,
         limit: int = 20,
-        status: Optional[SubscriptionStatus] = None,
+        status: SubscriptionStatus | None = None,
     ) -> tuple[list[Subscription], int]:
         conditions = [
             SubscriptionModel.user_id == user_id,
             SubscriptionModel.deleted_at.is_(None),
         ]
-        if status:
-            conditions.append(SubscriptionModel.status == status.value)
 
-        # Count total items
+        if status is not None:
+            conditions.append(SubscriptionModel.status == status)
+
         count_stmt = select(func.count()).select_from(SubscriptionModel).where(and_(*conditions))
-        count_res = await self.session.execute(count_stmt)
-        total_count = count_res.scalar_one()
 
-        # Fetch page items
+        count_result = await self.session.execute(count_stmt)
+        total_count = count_result.scalar_one()
+
         query = (
             select(SubscriptionModel)
             .where(and_(*conditions))
+            .order_by(SubscriptionModel.created_at.desc())
             .offset(skip)
             .limit(limit)
-            .order_by(SubscriptionModel.created_at.desc())
         )
-        results = await self.session.execute(query)
-        models = results.scalars().all()
 
-        return [self._to_entity(m) for m in models], total_count
+        result = await self.session.execute(query)
+        models = result.scalars().all()
+
+        subscriptions = [self._to_entity(model) for model in models]
+
+        return subscriptions, total_count
 
     async def update(self, subscription: Subscription) -> Subscription:
         query = select(SubscriptionModel).where(
@@ -124,35 +123,32 @@ class SqlAlchemySubscriptionRepository(SubscriptionRepository):
                 SubscriptionModel.deleted_at.is_(None),
             )
         )
-        res = await self.session.execute(query)
-        model = res.scalar_one_or_none()
 
-        if not model:
+        result = await self.session.execute(query)
+        model = result.scalar_one_or_none()
+
+        if model is None:
             return await self.save(subscription)
 
+        model.plan_id = subscription.plan_id
+        model.provider_connection_id = subscription.provider_connection_id
         model.name = subscription.name
-        model.price = subscription.price
-        model.currency = subscription.currency
-        model.billing_cadence = subscription.billing_cadence.value
-        model.renewal_date = subscription.renewal_date
-        model.status = subscription.status.value
-        model.plan_alternatives = [
-            {
-                "name": alt.name,
-                "price": alt.price,
-                "currency": alt.currency,
-                "billing_cadence": alt.billing_cadence.value,
-                "notes": alt.notes,
-            }
-            for alt in subscription.plan_alternatives
-        ]
+        model.status = SubscriptionModelStatus(subscription.status.value)
+        model.started_at = subscription.started_at
+        model.renewal_at = subscription.renewal_at
+        model.ended_at = subscription.ended_at
         model.updated_at = subscription.updated_at
 
         await self.session.commit()
         await self.session.refresh(model)
+
         return self._to_entity(model)
 
-    async def soft_delete(self, subscription_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    async def soft_delete(
+        self,
+        subscription_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> bool:
         query = select(SubscriptionModel).where(
             and_(
                 SubscriptionModel.id == subscription_id,
@@ -160,12 +156,18 @@ class SqlAlchemySubscriptionRepository(SubscriptionRepository):
                 SubscriptionModel.deleted_at.is_(None),
             )
         )
-        res = await self.session.execute(query)
-        model = res.scalar_one_or_none()
 
-        if not model:
+        result = await self.session.execute(query)
+        model = result.scalar_one_or_none()
+
+        if model is None:
             return False
 
-        model.deleted_at = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
+
+        model.deleted_at = now
+        model.updated_at = now
+
         await self.session.commit()
-        return True 
+
+        return True

@@ -1,57 +1,44 @@
-from datetime import date, datetime
-from typing import Optional
-from dataclasses import dataclass
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
 
-from app.domain.subscriptions.entities import BillingCadence, SubscriptionStatus
-
-
-@dataclass
-class PlanAlternativeDTO:
-    name: str
-    price: float
-    currency: str
-    billing_cadence: BillingCadence
-    notes: Optional[str] = None
+from app.domain.subscriptions.entities import SubscriptionStatus
 
 
 @dataclass
 class CreateSubscriptionDTO:
     user_id: uuid.UUID
+    plan_id: uuid.UUID
     name: str
-    price: float
-    currency: str
-    billing_cadence: BillingCadence
-    renewal_date: date
-    plan_alternatives: list[PlanAlternativeDTO] = None
-
-    def __post_init__(self):
-        if self.plan_alternatives is None:
-            self.plan_alternatives = []
+    status: SubscriptionStatus = SubscriptionStatus.ACTIVE
+    provider_connection_id: uuid.UUID | None = None
+    started_at: datetime | None = None
+    renewal_at: datetime | None = None
+    ended_at: datetime | None = None
 
 
 @dataclass
 class UpdateSubscriptionDTO:
-    name: Optional[str] = None
-    price: Optional[float] = None
-    currency: Optional[str] = None
-    billing_cadence: Optional[BillingCadence] = None
-    renewal_date: Optional[date] = None
-    status: Optional[SubscriptionStatus] = None
-    plan_alternatives: Optional[list[PlanAlternativeDTO]] = None
+    plan_id: uuid.UUID | None = None
+    provider_connection_id: uuid.UUID | None = None
+    name: str | None = None
+    status: SubscriptionStatus | None = None
+    started_at: datetime | None = None
+    renewal_at: datetime | None = None
+    ended_at: datetime | None = None
 
 
 @dataclass
 class SubscriptionResponseDTO:
     id: uuid.UUID
     user_id: uuid.UUID
+    plan_id: uuid.UUID
+    provider_connection_id: uuid.UUID | None
     name: str
-    price: float
-    currency: str
-    billing_cadence: BillingCadence
-    renewal_date: date
     status: SubscriptionStatus
-    plan_alternatives: list[PlanAlternativeDTO]
+    started_at: datetime | None
+    renewal_at: datetime | None
+    ended_at: datetime | None
     created_at: datetime
     updated_at: datetime
-    deleted_at: Optional[datetime] = None
+    deleted_at: datetime | None = None
