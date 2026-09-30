@@ -36,11 +36,7 @@ def raise_problem(
 ) -> NoReturn:
     """Raise an HTTP exception using the shared Problem Details convention."""
 
-    type_uri = (
-        type_name
-        if type_name == "about:blank"
-        else problem_type(type_name)
-    )
+    type_uri = type_name if type_name == "about:blank" else problem_type(type_name)
 
     raise HTTPException(
         status_code=status_code,
@@ -51,6 +47,7 @@ def raise_problem(
             "detail": detail,
         },
     )
+
 
 async def validation_exception_handler(
     request: Request,
