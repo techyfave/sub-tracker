@@ -30,6 +30,7 @@ REQUIRED_TABLES = {
     "recommendations",
     "refresh_tokens",
     "savings_records",
+    "subscription_alternatives",
     "subscriptions",
     "transactions",
     "usage_events",

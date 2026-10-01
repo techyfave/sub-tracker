@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from app.api.v1.dependencies.auth import ensure_owner
 from app.application.subscriptions.dtos import (
@@ -33,6 +34,8 @@ class SubscriptionService:
             created_at=subscription.created_at,
             updated_at=subscription.updated_at,
             deleted_at=subscription.deleted_at,
+            plan=subscription.plan,
+            plan_alternatives=subscription.plan_alternatives,
         )
 
     async def create_subscription(
@@ -47,7 +50,9 @@ class SubscriptionService:
 
         subscription = Subscription(
             user_id=dto.user_id,
-            plan_id=dto.plan_id,
+            plan_id=dto.plan.id if dto.plan else dto.plan_id or uuid.uuid4(),
+            plan=dto.plan,
+            plan_alternatives=dto.plan_alternatives,
             name=dto.name,
             status=dto.status,
             provider_connection_id=dto.provider_connection_id,
@@ -120,25 +125,32 @@ class SubscriptionService:
 
         if dto.plan_id is not None:
             subscription.plan_id = dto.plan_id
+            subscription.plan = None
+        if dto.plan is not None:
+            subscription.plan = dto.plan
+            subscription.plan_id = dto.plan.id
+        if dto.plan_alternatives is not None:
+            subscription.plan_alternatives = dto.plan_alternatives
 
-        if dto.provider_connection_id is not None:
+        if dto.provider_connection_id is not None or "provider_connection_id" in dto.fields_set:
             subscription.provider_connection_id = dto.provider_connection_id
 
         if dto.name is not None:
             subscription.name = dto.name
 
-        if dto.started_at is not None:
+        if dto.started_at is not None or "started_at" in dto.fields_set:
             subscription.started_at = dto.started_at
 
-        if dto.renewal_at is not None:
+        if dto.renewal_at is not None or "renewal_at" in dto.fields_set:
             subscription.renewal_at = dto.renewal_at
 
-        if dto.ended_at is not None:
+        if dto.ended_at is not None or "ended_at" in dto.fields_set:
             subscription.ended_at = dto.ended_at
 
         if dto.status is not None and dto.status != subscription.status:
             subscription.transition_status(dto.status)
 
+        subscription.updated_at = datetime.now(UTC)
         updated = await self.repository.update(subscription)
 
         return self._to_response_dto(updated)

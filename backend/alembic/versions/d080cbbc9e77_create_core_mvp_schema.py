@@ -437,9 +437,7 @@ def upgrade() -> None:
         ),
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.CheckConstraint("amount >= 0", name=op.f("ck_transactions_amount_non_negative")),
-        sa.CheckConstraint(
-            "length(currency) = 3", name=op.f("ck_transactions_currency_length")
-        ),
+        sa.CheckConstraint("length(currency) = 3", name=op.f("ck_transactions_currency_length")),
         sa.ForeignKeyConstraint(
             ["subscription_id"],
             ["subscriptions.id"],
@@ -541,9 +539,7 @@ def upgrade() -> None:
             "annual_savings_amount >= 0",
             name=op.f("ck_recommendations_annual_savings_non_negative"),
         ),
-        sa.CheckConstraint(
-            "length(currency) = 3", name=op.f("ck_recommendations_currency_length")
-        ),
+        sa.CheckConstraint("length(currency) = 3", name=op.f("ck_recommendations_currency_length")),
         sa.CheckConstraint(
             "confidence >= 0 AND confidence <= 1", name=op.f("ck_recommendations_confidence_range")
         ),
@@ -822,9 +818,7 @@ def upgrade() -> None:
         ),
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.CheckConstraint("amount >= 0", name=op.f("ck_savings_records_amount_non_negative")),
-        sa.CheckConstraint(
-            "length(currency) = 3", name=op.f("ck_savings_records_currency_length")
-        ),
+        sa.CheckConstraint("length(currency) = 3", name=op.f("ck_savings_records_currency_length")),
         sa.ForeignKeyConstraint(
             ["action_id"],
             ["actions.id"],

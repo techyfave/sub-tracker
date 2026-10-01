@@ -24,14 +24,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.domain.subscriptions.entities import SubscriptionStatus as SubscriptionStatus
 from app.infrastructure.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-
-
-class SubscriptionStatus(enum.StrEnum):
-    ACTIVE = "active"
-    PAUSED = "paused"
-    CANCELLED = "cancelled"
-    EXPIRED = "expired"
 
 
 class WorkStatus(enum.StrEnum):
@@ -144,6 +138,18 @@ class SubscriptionModel(UUIDPrimaryKeyMixin, TimestampMixin, UserOwnedMixin, Bas
     renewal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SubscriptionAlternativeModel(Base):
+    __tablename__ = "subscription_alternatives"
+    subscription_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("plans.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
 
 
 class TransactionModel(UUIDPrimaryKeyMixin, TimestampMixin, UserOwnedMixin, Base):
