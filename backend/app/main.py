@@ -3,12 +3,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api.problem_details import validation_exception_handler
+from app.api.problem_details import ProblemDetail, problem_type, validation_exception_handler
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.domain.subscriptions.exceptions import InvalidSubscriptionReferenceError
 from app.infrastructure.database.session import close_database
 from app.infrastructure.rate_limit.limiter import limiter
 
@@ -47,6 +49,23 @@ def create_app() -> FastAPI:
         RequestValidationError,
         validation_exception_handler,
     )
+
+    @application.exception_handler(InvalidSubscriptionReferenceError)
+    async def invalid_reference(
+        request: Request, exc: InvalidSubscriptionReferenceError
+    ) -> Response:
+        problem = ProblemDetail(
+            type=problem_type("invalid-subscription-reference"),
+            title="Invalid subscription reference",
+            status=422,
+            detail=str(exc),
+            instance=request.url.path,
+        )
+        return JSONResponse(
+            status_code=422,
+            content=problem.model_dump(exclude_none=True),
+            media_type="application/problem+json",
+        )
 
     application.include_router(
         api_router,

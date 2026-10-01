@@ -25,6 +25,7 @@ EXPECTED_CORE_TABLES = {
     "recommendation_evidence",
     "recommendations",
     "savings_records",
+    "subscription_alternatives",
     "subscriptions",
     "transactions",
     "usage_events",

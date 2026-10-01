@@ -1,6 +1,7 @@
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from app.domain.subscriptions.exceptions import (
@@ -13,6 +14,23 @@ class SubscriptionStatus(StrEnum):
     PAUSED = "paused"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
+
+
+class BillingCadence(StrEnum):
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+    WEEKLY = "weekly"
+    DAILY = "daily"
+
+
+@dataclass
+class Plan:
+    provider_id: uuid.UUID
+    name: str
+    amount: Decimal
+    currency: str
+    billing_interval: BillingCadence
+    id: uuid.UUID = field(default_factory=uuid.uuid4)
 
 
 @dataclass
@@ -29,6 +47,8 @@ class Subscription:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     deleted_at: datetime | None = None
+    plan: Plan | None = None
+    plan_alternatives: list[Plan] = field(default_factory=list)
 
     def transition_status(self, new_status: SubscriptionStatus) -> None:
         if self.status == SubscriptionStatus.CANCELLED and new_status == SubscriptionStatus.PAUSED:
