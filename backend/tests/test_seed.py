@@ -35,9 +35,7 @@ async def _table_counts(session) -> dict[str, int]:
 async def test_seed_loads_all_scenarios(db_session):
     await seed.seed_demo_data(db_session)
 
-    result = await db_session.execute(
-        select(RecommendationModel).order_by(RecommendationModel.id)
-    )
+    result = await db_session.execute(select(RecommendationModel).order_by(RecommendationModel.id))
     recommendations = result.scalars().all()
 
     assert len(recommendations) == 6
@@ -51,9 +49,7 @@ async def test_seed_loads_all_scenarios(db_session):
     cancel = recommendations_by_id[seed.CANCEL_RECOMMENDATION_ID]
     review = recommendations_by_id[seed.REVIEW_RECOMMENDATION_ID]
     missing_usage = recommendations_by_id[seed.MISSING_USAGE_RECOMMENDATION_ID]
-    conflicting = recommendations_by_id[
-        seed.CONFLICTING_EVIDENCE_RECOMMENDATION_ID
-    ]
+    conflicting = recommendations_by_id[seed.CONFLICTING_EVIDENCE_RECOMMENDATION_ID]
 
     assert keep.recommended_action == RecommendationAction.KEEP
     assert keep.monthly_savings_amount == Decimal("0")
@@ -149,8 +145,7 @@ async def test_downgrade_savings_remain_estimated_until_action_is_verified(
 
     result = await db_session.execute(
         select(SavingsRecordModel).where(
-            SavingsRecordModel.recommendation_id
-            == seed.DOWNGRADE_RECOMMENDATION_ID
+            SavingsRecordModel.recommendation_id == seed.DOWNGRADE_RECOMMENDATION_ID
         )
     )
     savings_records = result.scalars().all()

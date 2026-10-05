@@ -58,6 +58,20 @@ async def _table_names(dsn: str) -> set[str]:
         await connection.close()
 
 
+async def _table_row_counts(dsn: str) -> dict[str, int]:
+    connection = await asyncpg.connect(dsn)
+    try:
+        counts = {}
+
+        for table in EXPECTED_CORE_TABLES:
+            row = await connection.fetchrow(f'SELECT COUNT(*) AS count FROM "{table}"')
+            counts[table] = row["count"]
+
+        return counts
+    finally:
+        await connection.close()
+
+
 def test_upgrade_and_downgrade_round_trip_against_postgresql() -> None:
     async_url, asyncpg_dsn = _database_urls()
 
@@ -71,3 +85,35 @@ def test_upgrade_and_downgrade_round_trip_against_postgresql() -> None:
     assert {"users", "refresh_tokens"} <= remaining
 
     _alembic("upgrade", "head", database_url=async_url)
+
+
+def test_demo_seed_command_is_repeatable_against_postgresql() -> None:
+    async_url, asyncpg_dsn = _database_urls()
+
+    _alembic("downgrade", "base", database_url=async_url)
+    _alembic("upgrade", "head", database_url=async_url)
+
+    environment = {**os.environ, "DATABASE_URL": async_url}
+
+    subprocess.run(
+        [sys.executable, "-m", "app.infrastructure.database.seed"],
+        check=True,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    first_counts = asyncio.run(_table_row_counts(asyncpg_dsn))
+
+    subprocess.run(
+        [sys.executable, "-m", "app.infrastructure.database.seed"],
+        check=True,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    second_counts = asyncio.run(_table_row_counts(asyncpg_dsn))
+
+    assert first_counts == second_counts
+    assert all(count > 0 for count in first_counts.values())

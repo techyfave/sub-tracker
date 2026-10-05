@@ -151,6 +151,9 @@ async def seed_users_providers_plans(session: AsyncSession) -> None:
 
     session.add_all(users)
     session.add_all(providers)
+
+    await session.flush()
+
     session.add_all(plans)
 
     await session.flush()
@@ -259,6 +262,9 @@ async def seed_connections_and_subscriptions(session: AsyncSession) -> None:
     ]
 
     session.add_all(connections)
+
+    await session.flush()
+
     session.add_all(subscriptions)
 
     await session.flush()
@@ -639,7 +645,13 @@ async def seed_analyses_and_recommendations(session: AsyncSession) -> None:
     ]
 
     session.add(prompt_version)
+
+    await session.flush()
+
     session.add_all(analyses)
+
+    await session.flush()
+
     session.add_all(recommendations)
 
     await session.flush()
@@ -872,7 +884,7 @@ async def seed_conversation(session: AsyncSession) -> None:
             updated_at=SEED_TIMESTAMP,
         ),
         MessageModel(
-	    id=uuid.UUID("66000000-0000-4000-8000-000000000002"),
+            id=uuid.UUID("66000000-0000-4000-8000-000000000002"),
             user_id=REVIEW_USER_ID,
             conversation_id=conversation_id,
             role="assistant",
@@ -888,6 +900,9 @@ async def seed_conversation(session: AsyncSession) -> None:
     ]
 
     session.add(conversation)
+
+    await session.flush()
+
     session.add_all(messages)
 
     await session.flush()
@@ -996,6 +1011,9 @@ async def seed_evaluation(session: AsyncSession) -> None:
     ]
 
     session.add(evaluation_run)
+
+    await session.flush()
+
     session.add_all(results)
 
     await session.flush()
