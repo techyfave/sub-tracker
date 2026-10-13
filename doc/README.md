@@ -16,6 +16,7 @@ The MVP backend is a **modular monolith**: one deployable application with expli
 | [004 AI Prompt and Response Retention](adr/004-ai-prompt-response-retention.md) | Raw AI prompts/responses retained for 30 days, then deleted |
 | [005 Demo Currency](adr/005-demo-currency.md) | NGN is the canonical demo/seed currency |
 | [006 Seed Data Shape](adr/006-seed-data-shape.md) | Deterministic, minimal, relationally valid, idempotent development-only seed |
+| [007 Application-Managed Credentials and Refresh-Token Rotation](adr/007-application-managed-credentials-and-refresh-rotation.md) | Argon2id passwords, hashed opaque single-use refresh credentials with atomic rotation and replay revocation (refines ADR-001) |
 
 ## Domain terminology
 

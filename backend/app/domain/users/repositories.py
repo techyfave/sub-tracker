@@ -26,6 +26,26 @@ class RefreshTokenRepository(Protocol):
 
     async def get_by_token_hash(self, token_hash: str) -> RefreshToken | None: ...
 
+    async def rotate(
+        self,
+        *,
+        consumed_token_id: UUID,
+        revoked_at: datetime,
+        user_id: UUID,
+        new_token_hash: str,
+        new_expires_at: datetime,
+    ) -> RefreshToken | None:
+        """Atomically consume one credential and issue its replacement.
+
+        Must revoke ``consumed_token_id`` only if it is still unrevoked and, in
+        the same transaction, persist the replacement. Returns the replacement,
+        or ``None`` if the credential had already been consumed (lost a race
+        or replayed) - in which case nothing is written. Implementations must
+        guarantee that of any number of concurrent calls for the same
+        credential, at most one returns a replacement.
+        """
+        ...
+
     async def revoke(self, token_id: UUID, *, revoked_at: datetime) -> None: ...
 
     async def revoke_all_for_user(self, user_id: UUID, *, revoked_at: datetime) -> None: ...

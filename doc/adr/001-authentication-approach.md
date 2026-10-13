@@ -2,6 +2,8 @@
 
 **Status:** Accepted
 
+**Refined by:** [ADR-007 Application-Managed Credentials and Refresh-Token Rotation](007-application-managed-credentials-and-refresh-rotation.md), which records the credential-storage, refresh-rotation, and authorization decisions made when implementing issue #5.
+
 ## Context
 
 The subscription tracker needs authenticated access to user-owned subscriptions, transactions, analyses, recommendations, and decisions. The MVP must identify the caller and enforce ownership without coupling domain logic to a particular authentication vendor.

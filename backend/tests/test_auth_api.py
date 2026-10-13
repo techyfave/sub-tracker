@@ -48,7 +48,8 @@ async def test_login_with_unknown_email_is_invalid_credentials(client: AsyncClie
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"]["title"] == "Invalid credentials"
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["title"] == "Invalid credentials"
 
 
 async def test_login_with_wrong_password_is_invalid_credentials(client: AsyncClient) -> None:
@@ -119,7 +120,8 @@ async def test_reusing_a_rotated_refresh_token_is_rejected_and_revokes_the_sessi
     # Reusing the *original* (now-rotated-away) token is a reuse/theft signal.
     replay = await client.post(REFRESH_PATH, json={"refresh_token": first_tokens["refresh_token"]})
     assert replay.status_code == 401
-    assert replay.json()["detail"]["title"] == "Refresh token reused"
+    assert replay.headers["content-type"].startswith("application/problem+json")
+    assert replay.json()["title"] == "Refresh token reused"
 
     # Reuse detection revokes the whole family, so even the *valid* rotated
     # token from the legitimate refresh above must now be rejected too.
@@ -133,7 +135,8 @@ async def test_refresh_with_unknown_token_is_invalid(client: AsyncClient) -> Non
     response = await client.post(REFRESH_PATH, json={"refresh_token": "not-a-real-token"})
 
     assert response.status_code == 401
-    assert response.json()["detail"]["title"] == "Invalid refresh token"
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["title"] == "Invalid refresh token"
 
 
 async def test_register_is_rate_limited(client: AsyncClient) -> None:
