@@ -312,3 +312,61 @@ async def test_user_cannot_access_another_users_subscription(
     )
 
     assert response.status_code == 404
+
+
+async def test_create_rejects_impossible_dates(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # sign in and make a plan
+    token = await _register_and_login(client, email="baddates@example.com")
+    plan = await _create_plan(db_session)
+    # the exact request from the review
+    response = await client.post(
+        SUBSCRIPTIONS_PATH,
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "plan_id": str(plan.id),
+            "name": "Netflix",
+            "started_at": "2026-10-05T00:00:00Z",
+            "renewal_at": "2026-01-01T00:00:00Z",
+            "ended_at": "2025-01-01T00:00:00Z",
+        },
+    )
+    # impossible dates must be refused
+    assert response.status_code == 422, response.text
+
+
+async def test_patch_rejects_renewal_before_start_and_keeps_data(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # sign in and make a plan
+    token = await _register_and_login(client, email="patchdates@example.com")
+    plan = await _create_plan(db_session)
+    headers = {"Authorization": f"Bearer {token}"}
+    # create a valid subscription
+    created = await client.post(
+        SUBSCRIPTIONS_PATH,
+        headers=headers,
+        json={
+            "plan_id": str(plan.id),
+            "name": "Netflix",
+            "started_at": "2026-10-05T00:00:00Z",
+            "renewal_at": "2026-11-05T00:00:00Z",
+        },
+    )
+    # creation must succeed
+    assert created.status_code == 201, created.text
+    # remember its id
+    subscription_id = created.json()["id"]
+    # try to move the renewal before the start
+    response = await client.patch(
+        f"{SUBSCRIPTIONS_PATH}/{subscription_id}",
+        headers=headers,
+        json={"renewal_at": "2026-01-01T00:00:00Z"},
+    )
+    # the update must be refused
+    assert response.status_code == 422, response.text
+    # read the subscription again
+    fetched = await client.get(f"{SUBSCRIPTIONS_PATH}/{subscription_id}", headers=headers)
+    # the stored renewal date must be unchanged
+    assert fetched.json()["renewal_at"].startswith("2026-11-05")

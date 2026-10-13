@@ -17,7 +17,10 @@ from app.api.problem_details import (
 )
 from app.api.router import api_router  # all API routes
 from app.core.config import get_settings  # app settings
-from app.domain.subscriptions.exceptions import InvalidSubscriptionReferenceError  # bad plan or connection
+from app.domain.subscriptions.exceptions import (
+    InvalidSubscriptionDatesError,  # NEW: impossible dates
+    InvalidSubscriptionReferenceError,  # bad plan or connection
+)
 from app.infrastructure.database.session import close_database  # closes DB connections on shutdown
 from app.infrastructure.rate_limit.limiter import limiter  # shared rate limiter
 
@@ -78,6 +81,25 @@ def create_app() -> FastAPI:
         problem = ProblemDetail(
             type=problem_type("invalid-subscription-reference"),  # problem type URI
             title="Invalid subscription reference",  # short title
+            status=422,  # HTTP status
+            detail=str(exc),  # explanation
+            instance=request.url.path,  # request path
+        )
+        # return it as problem+json
+        return JSONResponse(
+            status_code=422,
+            content=problem.model_dump(exclude_none=True),
+            media_type="application/problem+json",
+        )
+
+        # impossible dates become a 422 problem response
+
+    @application.exception_handler(InvalidSubscriptionDatesError)
+    async def invalid_dates(request: Request, exc: InvalidSubscriptionDatesError) -> Response:
+        # build the problem body
+        problem = ProblemDetail(
+            type=problem_type("invalid-subscription-dates"),  # problem type URI
+            title="Invalid subscription dates",  # short title
             status=422,  # HTTP status
             detail=str(exc),  # explanation
             instance=request.url.path,  # request path
