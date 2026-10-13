@@ -30,6 +30,8 @@ EXPECTED_CORE_TABLES = {
     "transactions",
     "usage_events",
 }
+# tables that must exist after migration but that the demo seed does not fill
+TABLES_NOT_SEEDED = {"subscription_alternatives"}
 
 
 def _database_urls() -> tuple[str, str]:
@@ -117,4 +119,11 @@ def test_demo_seed_command_is_repeatable_against_postgresql() -> None:
     second_counts = asyncio.run(_table_row_counts(asyncpg_dsn))
 
     assert first_counts == second_counts
-    assert all(count > 0 for count in first_counts.values())
+    # keep only the tables the seed is meant to fill
+    seeded_counts = {
+        table: count for table, count in first_counts.items() if table not in TABLES_NOT_SEEDED
+    }
+    # every seeded table must contain rows
+    assert all(count > 0 for count in seeded_counts.values())
+    # the unseeded tables must still be counted, so their repeatability stays covered
+    assert first_counts.keys() >= TABLES_NOT_SEEDED

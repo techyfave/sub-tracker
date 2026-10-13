@@ -14,8 +14,3 @@ Status: only cancelled -> paused is rejected. All other status changes are allow
 
 ## Why
 A PATCH may send only one field, so the combined state is the only reliable thing to check.
-
-
-
-
-
