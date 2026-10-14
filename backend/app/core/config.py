@@ -19,6 +19,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://sub_tracker:sub_tracker_local@localhost:5432/sub_tracker"
     )
     redis_url: str = "redis://localhost:6379/0"
+    job_queue: str = "sub-tracker.jobs"
 
     # Auth (issue #5). JWT bearer access tokens: ADR-001. Application-managed
     # Argon2id passwords and rotating opaque refresh tokens: ADR-007
