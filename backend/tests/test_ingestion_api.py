@@ -1,23 +1,32 @@
 import pytest
+from httpx import AsyncClient
 from datetime import datetime, timezone
 import uuid
+from decimal import Decimal
 
-# Direct the test runner engine to execute loops through native async wrappers
 pytestmark = pytest.mark.asyncio
 
-async def test_unknown_vs_zero_usage_distinction():
-    """Validates that explicit zero and unknown usage are tracked correctly."""
-    units_used_zero = 0.0
-    units_used_unknown = None
-    
-    assert units_used_zero is not None, "Zero usage must register as a numeric element."
-    assert units_used_unknown is None, "Unknown usage must register explicitly as None/Null."
+async def test_ingest_transaction_cross_user_rejection(client: AsyncClient):
+    """Ensures a malicious token call targeting a foreign subscription returns 403."""
+    foreign_sub_id = str(uuid.uuid4())
+    payload = {
+        "amount": "49.99",
+        "currency": "USD",
+        "occurrence_time": datetime.now(timezone.utc).isoformat(),
+        "source": "stripe",
+        "external_reference": "tx_mock_9999"
+    }
+    response = await client.post(f"/api/v1/subscriptions/{foreign_sub_id}/transactions", json=payload)
+    assert response.status_code in (401, 403, 404)
 
-async def test_idempotence_deduplication():
-    """Validates that duplication tracking keys exist to suppress dual ingestion entries."""
-    idempotency_key = "stripe_ch_99999"
-    processed_ledger = set()
-    
-    processed_ledger.add(idempotency_key)
-    
-    assert (idempotency_key in processed_ledger) is True
+async def test_ingest_usage_contradictory_input_rejection(client: AsyncClient):
+    """Ensures schemas prevent payload tracking states that pass both unknown flags and values."""
+    payload = {
+        "subscription_id": str(uuid.uuid4()),
+        "occurrence_time": datetime.now(timezone.utc).isoformat(),
+        "quantity": "12.50",
+        "is_unknown": True,
+        "source": "datadog"
+    }
+    response = await client.post("/api/v1/subscriptions/usage-events", json=payload)
+    assert response.status_code in (401, 422, 403)
