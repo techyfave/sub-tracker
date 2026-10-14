@@ -1,83 +1,82 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.future import select
 from uuid import UUID
+import json
 
 from app.api.v1.dependencies.auth import get_current_user
 from app.infrastructure.database.session import get_session
-from app.api.v1.schemas.subscriptions import TransactionCreate, TransactionResponse, UsageEventCreate, UsageEventResponse
-from app.infrastructure.database.models.subscriptions import TransactionModel, UsageEventModel
-from app.infrastructure.database.models.core import SubscriptionModel 
+from app.api.v1.schemas.subscriptions import TransactionCreate, UsageEventCreate
+from app.infrastructure.database.models.core import SubscriptionModel, TransactionModel, UsageEventModel 
 
 router = APIRouter()
 
-async def verify_subscription_ownership(subscription_id: UUID, current_user_id: UUID, db: AsyncSession):
+async def get_validated_subscription(subscription_id: UUID, current_user_id: UUID, db: AsyncSession) -> SubscriptionModel:
     query = select(SubscriptionModel).filter(SubscriptionModel.id == subscription_id)
     result = await db.execute(query)
     sub = result.scalars().first()
     
     if not sub:
-        raise HTTPException(status_code=404, detail="Subscription context not found")
-    if sub.user_id != current_user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-user write rejected.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription context not found")
+    if sub.user_id != current_user_id or getattr(sub, "is_deleted", False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: Resource ownership mismatch.")
     return sub
 
-@router.post("/{id}/transactions", response_model=TransactionResponse, status_code=201)
+@router.post("/{id}/transactions", status_code=status.HTTP_201_CREATED)
 async def ingest_transaction(
     id: UUID, 
     payload: TransactionCreate, 
     current_user = Depends(get_current_user), 
     db: AsyncSession = Depends(get_session)
 ):
-    await verify_subscription_ownership(id, current_user.id, db)
+    await get_validated_subscription(id, current_user.id, db)
     
-    if payload.external_id:
-        query = select(TransactionModel).filter(TransactionModel.external_id == payload.external_id)
-        result = await db.execute(query)
-        existing = result.scalars().first()
-        if existing: 
-            return existing
-            
-    db_transaction = TransactionModel(
-        subscription_id=id, 
-        amount=payload.amount, 
-        currency=payload.currency, 
-        occurrence_time=payload.occurrence_time, 
-        source=payload.source, 
-        external_id=payload.external_id
+    stmt = insert(TransactionModel).values(
+        subscription_id=id,
+        user_id=current_user.id,
+        amount=payload.amount,
+        currency=payload.currency,
+        occurred_at=payload.occurrence_time,
+        source=payload.source,
+        external_reference=payload.external_reference
     )
-    db.add(db_transaction)
+    
+    if payload.external_reference:
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["external_reference"],
+            set_={
+                "amount": stmt.excluded.amount,
+                "currency": stmt.excluded.currency
+            }
+        )
+    
+    await db.execute(stmt)
     await db.commit()
-    await db.refresh(db_transaction)
-    return db_transaction
+    return {"status": "success", "message": "Transaction ingestion completed successfully."}
 
-@router.post("/usage-events", response_model=UsageEventResponse, status_code=201)
+@router.post("/usage-events", status_code=status.HTTP_201_CREATED)
 async def ingest_usage_event(
     payload: UsageEventCreate, 
     current_user = Depends(get_current_user), 
     db: AsyncSession = Depends(get_session)
 ):
-    await verify_subscription_ownership(payload.subscription_id, current_user.id, db)
+    await get_validated_subscription(payload.subscription_id, current_user.id, db)
     
-    if payload.idempotency_key:
-        query = select(UsageEventModel).filter(UsageEventModel.idempotency_key == payload.idempotency_key)
-        result = await db.execute(query)
-        existing = result.scalars().first()
-        if existing: 
-            return existing
-            
-    units = payload.units_used
-    is_unk = payload.is_unknown or (units is None)
+    evidence_payload = {"source": payload.source, "is_unknown": payload.is_unknown}
     
-    db_event = UsageEventModel(
-        subscription_id=payload.subscription_id, 
-        occurrence_time=payload.occurrence_time, 
-        units_used=units, 
-        is_unknown=is_unk, 
-        source=payload.source, 
+    stmt = insert(UsageEventModel).values(
+        subscription_id=payload.subscription_id,
+        user_id=current_user.id,
+        occurred_at=payload.occurrence_time,
+        quantity=payload.quantity,
+        evidence_json=json.dumps(evidence_payload),
         idempotency_key=payload.idempotency_key
     )
-    db.add(db_event)
+    
+    if payload.idempotency_key:
+        stmt = stmt.on_conflict_do_nothing(index_elements=["idempotency_key"])
+        
+    await db.execute(stmt)
     await db.commit()
-    await db.refresh(db_event)
-    return db_event
+    return {"status": "success", "message": "Usage metrics payload recorded successfully."}

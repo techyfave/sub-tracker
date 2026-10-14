@@ -1,41 +1,70 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
 class TransactionCreate(BaseModel):
-    amount: float = Field(..., description="The transaction fee value.")
-    currency: str = Field(..., max_length=3, description="ISO currency code.")
-    occurrence_time: datetime = Field(..., description="When the charge actually occurred.")
-    source: str = Field(..., description="System origin details.")
-    external_id: Optional[str] = Field(None, description="External reference ID for duplicate suppression.")
+    amount: Decimal = Field(..., description="Exact monetary transaction value.")
+    currency: str = Field(..., min_length=3, max_length=3, description="ISO currency code.")
+    occurrence_time: datetime = Field(..., description="Timezone-aware timestamp when charge occurred.")
+    source: str = Field(..., min_length=1, max_length=100, description="Provenance system tracking descriptor.")
+    external_reference: Optional[str] = Field(None, max_length=255, description="Unique idempotency string scoped to provider.")
 
-class TransactionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, v: Decimal) -> Decimal:
+        if v < 0:
+            raise ValueError("Monetary amount must be non-negative.")
+        if not v.is_finite():
+            raise ValueError("Monetary amount must be a finite numerical representation.")
+        if abs(v.as_tuple().exponent) > 4:
+            raise ValueError("Precision cannot exceed 4 decimal places.")
+        return v
 
-    id: UUID
-    subscription_id: UUID
-    amount: float
-    currency: str
-    occurrence_time: datetime
-    source: str
-    external_id: Optional[str]
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, v: str) -> str:
+        if not v.isalpha():
+            raise ValueError("Currency must consist of 3 alphabetic characters.")
+        return v.upper()
+
+    @field_validator("occurrence_time")
+    @classmethod
+    def validate_tz(cls, v: datetime) -> datetime:
+        if v.tzinfo is None:
+            raise ValueError("Occurrence time must be a timezone-aware timestamp.")
+        return v
 
 class UsageEventCreate(BaseModel):
     subscription_id: UUID
-    occurrence_time: datetime = Field(..., description="Timestamp when usage occurred.")
-    units_used: Optional[float] = Field(None, description="Quantified units. Null means Unknown Usage.")
-    is_unknown: bool = Field(False, description="Explicit flag marking tracking as unknown.")
-    source: str = Field(..., description="Source provenance identifier.")
-    idempotency_key: Optional[str] = Field(None, description="Unique constraint mapping key.")
+    occurrence_time: datetime = Field(..., description="Timezone-aware log tracking time.")
+    quantity: Optional[Decimal] = Field(None, description="Quantified units metric.")
+    is_unknown: bool = Field(False, description="Explicit designation marking tracking as unknown vs zero.")
+    source: str = Field(..., min_length=1, max_length=100, description="Origin logging identifier.")
+    idempotency_key: Optional[str] = Field(None, max_length=255, description="Tracking constraint reference.")
 
-class UsageEventResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    @field_validator("occurrence_time")
+    @classmethod
+    def validate_tz(cls, v: datetime) -> datetime:
+        if v.tzinfo is None:
+            raise ValueError("Occurrence timestamp must be timezone-aware.")
+        return v
 
-    id: UUID
-    subscription_id: UUID
-    occurrence_time: datetime
-    units_used: Optional[float]
-    is_unknown: bool
-    source: str
-    idempotency_key: Optional[str]
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None:
+            if v < 0:
+                raise ValueError("Quantity cannot be negative.")
+            if not v.is_finite():
+                raise ValueError("Quantity must be a finite numerical representation.")
+        return v
+
+    @model_validator(mode="after")
+    def verify_contradiction_contracts(self) -> "UsageEventCreate":
+        if self.is_unknown and self.quantity is not None:
+            raise ValueError("Contradictory Input: Cannot define explicit quantity when marked as unknown.")
+        if not self.is_unknown and self.quantity is None:
+            raise ValueError("Contradictory Input: Must specify quantity or explicitly mark as unknown.")
+        return self
