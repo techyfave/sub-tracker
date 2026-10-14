@@ -34,3 +34,7 @@ uv run python -m app.infrastructure.database.seed
 The seed creates the six Issue #4 scenarios: keep, downgrade, cancel, review, missing usage, and conflicting evidence.
 
 The seed is idempotent. Running it again after a successful seed does not create duplicate demo records.
+
+## Background worker
+
+See [background-jobs.md](docs/background-jobs.md) for Celery/Redis setup, durable job integration, retries, recovery and verification.
