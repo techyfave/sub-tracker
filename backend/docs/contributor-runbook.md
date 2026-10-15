@@ -238,6 +238,16 @@ docker compose exec api uv run python -m app.infrastructure.database.seed
 
 The seed contains six subscription-review scenarios: keep, downgrade, cancel, review, missing usage, and conflicting evidence.
 
+The downgrade scenario includes **NGN 4,000 in estimated monthly savings** based on the difference between the current and proposed plan prices. This is a projection, not realized savings: the associated downgrade action remains queued with zero attempts, and the estimate has no linked action. Do not interpret estimated savings as proof that a provider-side change has completed.
+
+**Maintainer follow-up:** ADR-006 currently specifies two savings records,
+including estimated and verified savings, while the implemented seed and
+tests require one estimated record. Keep the current downgrade savings
+estimated unless completed-action and post-change billing evidence supports
+verification. Resolve the fixture-count discrepancy with maintainers before
+changing the seed or its tests.
+
+
 
 
 The fixtures use fixed IDs and timestamps and are intended to be idempotent. Seed accounts use placeholder password hashes and are not normal login accounts.
