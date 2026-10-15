@@ -1,33 +1,104 @@
+
 import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_validator,
+)
 
 from app.api.v1.schemas.common import MoneySchema, PaginatedResponse
 from app.domain.subscriptions.entities import BillingCadence, SubscriptionStatus
 
 
 class PlanInput(MoneySchema):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "provider_id": "123e4567-e89b-12d3-a456-426614174001",
+                    "name": "Monthly Premium",
+                    "amount": "5000.00",
+                    "currency": "NGN",
+                    "billing_interval": "monthly",
+                }
+            ]
+        },
+    )
+
     provider_id: uuid.UUID
     name: str = Field(min_length=1, max_length=200)
-    amount: Decimal = Field(ge=0, max_digits=18, decimal_places=4, allow_inf_nan=False)
+    amount: Decimal = Field(
+        ge=0,
+        max_digits=18,
+        decimal_places=4,
+        allow_inf_nan=False,
+    )
     currency: str = Field(pattern=r"^[A-Za-z]{3}$")
     billing_interval: BillingCadence
 
 
 class PlanResponse(PlanInput):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": "123e4567-e89b-12d3-a456-426614174002",
+                    "provider_id": "123e4567-e89b-12d3-a456-426614174001",
+                    "name": "Monthly Premium",
+                    "amount": "5000.00",
+                    "currency": "NGN",
+                    "billing_interval": "monthly",
+                }
+            ]
+        },
+    )
+
     id: uuid.UUID
 
 
 class SubscriptionCreateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "plan_id": "123e4567-e89b-12d3-a456-426614174002",
+                    "name": "Music Subscription",
+                    "status": "active",
+                    "provider_connection_id": None,
+                    "started_at": "2026-10-01T10:00:00Z",
+                    "renewal_at": "2026-11-01T10:00:00Z",
+                    "ended_at": None,
+                },
+                {
+                    "plan": {
+                        "provider_id": "123e4567-e89b-12d3-a456-426614174001",
+                        "name": "Monthly Premium",
+                        "amount": "5000.00",
+                        "currency": "NGN",
+                        "billing_interval": "monthly",
+                    },
+                    "name": "Video Subscription",
+                    "status": "active",
+                },
+            ]
+        },
+    )
+
     plan_id: uuid.UUID | None = None
     plan: PlanInput | None = None
-    plan_alternatives: list[PlanInput] = Field(default_factory=list, max_length=50)
+    plan_alternatives: list[PlanInput] = Field(
+        default_factory=list,
+        max_length=50,
+    )
     name: str = Field(min_length=1, max_length=200)
     status: SubscriptionStatus = SubscriptionStatus.ACTIVE
     provider_connection_id: uuid.UUID | None = None
@@ -43,10 +114,24 @@ class SubscriptionCreateRequest(BaseModel):
 
 
 class SubscriptionUpdateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "name": "Updated Music Subscription",
+                    "status": "paused",
+                }
+            ]
+        },
+    )
+
     plan_id: uuid.UUID | None = None
     plan: PlanInput | None = None
-    plan_alternatives: list[PlanInput] | None = Field(default=None, max_length=50)
+    plan_alternatives: list[PlanInput] | None = Field(
+        default=None,
+        max_length=50,
+    )
     provider_connection_id: uuid.UUID | None = None
     name: str | None = Field(None, min_length=1, max_length=200)
     status: SubscriptionStatus | None = None
@@ -65,7 +150,37 @@ class SubscriptionUpdateRequest(BaseModel):
 
 
 class SubscriptionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": "123e4567-e89b-12d3-a456-426614174003",
+                    "user_id": "123e4567-e89b-12d3-a456-426614174004",
+                    "plan_id": "123e4567-e89b-12d3-a456-426614174002",
+                    "plan": {
+                        "id": "123e4567-e89b-12d3-a456-426614174002",
+                        "provider_id": "123e4567-e89b-12d3-a456-426614174001",
+                        "name": "Monthly Premium",
+                        "amount": "5000.00",
+                        "currency": "NGN",
+                        "billing_interval": "monthly",
+                    },
+                    "plan_alternatives": [],
+                    "provider_connection_id": None,
+                    "name": "Music Subscription",
+                    "status": "active",
+                    "started_at": "2026-10-01T10:00:00",
+                    "renewal_at": "2026-11-01T10:00:00",
+                    "ended_at": None,
+                    "created_at": "2026-10-01T10:00:00",
+                    "updated_at": "2026-10-01T10:00:00",
+                    "deleted_at": None,
+                }
+            ]
+        },
+    )
+
     id: uuid.UUID
     user_id: uuid.UUID
     plan_id: uuid.UUID
