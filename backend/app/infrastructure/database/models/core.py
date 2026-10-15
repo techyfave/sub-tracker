@@ -172,6 +172,14 @@ class TransactionModel(UUIDPrimaryKeyMixin, TimestampMixin, UserOwnedMixin, Base
 
 class UsageEventModel(UUIDPrimaryKeyMixin, TimestampMixin, UserOwnedMixin, Base):
     __tablename__ = "usage_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "source",
+            "idempotency_key",
+            name="uq_usage_events_user_id_source_idempotency_key",
+        ),
+    )
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("subscriptions.id", ondelete="CASCADE"), nullable=False, index=True
@@ -182,6 +190,10 @@ class UsageEventModel(UUIDPrimaryKeyMixin, TimestampMixin, UserOwnedMixin, Base)
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     is_unknown: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     evidence_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
 
 
 class PromptVersionModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):

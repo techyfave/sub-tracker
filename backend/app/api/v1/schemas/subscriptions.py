@@ -1,15 +1,22 @@
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
 
 class TransactionCreate(BaseModel):
     amount: Decimal = Field(..., description="Exact monetary transaction value.")
     currency: str = Field(..., min_length=3, max_length=3, description="ISO currency code.")
-    occurrence_time: datetime = Field(..., description="Timezone-aware timestamp when charge occurred.")
-    source: str = Field(..., min_length=1, max_length=100, description="Provenance system tracking descriptor.")
-    external_reference: Optional[str] = Field(None, max_length=255, description="Unique idempotency string scoped to provider.")
+    occurrence_time: datetime = Field(
+        ..., description="Timezone-aware timestamp when charge occurred."
+    )
+    source: str = Field(
+        ..., min_length=1, max_length=100, description="Provenance system tracking descriptor."
+    )
+    external_reference: str | None = Field(
+        None, max_length=255, description="Unique idempotency string scoped to provider."
+    )
 
     @field_validator("amount")
     @classmethod
@@ -36,13 +43,18 @@ class TransactionCreate(BaseModel):
             raise ValueError("Occurrence time must be a timezone-aware timestamp.")
         return v
 
+
 class UsageEventCreate(BaseModel):
     subscription_id: UUID
     occurrence_time: datetime = Field(..., description="Timezone-aware log tracking time.")
-    quantity: Optional[Decimal] = Field(None, description="Quantified units metric.")
-    is_unknown: bool = Field(False, description="Explicit designation marking tracking as unknown vs zero.")
+    quantity: Decimal | None = Field(None, description="Quantified units metric.")
+    is_unknown: bool = Field(
+        False, description="Explicit designation marking tracking as unknown vs zero."
+    )
     source: str = Field(..., min_length=1, max_length=100, description="Origin logging identifier.")
-    idempotency_key: Optional[str] = Field(None, max_length=255, description="Tracking constraint reference.")
+    idempotency_key: str | None = Field(
+        None, max_length=255, description="Tracking constraint reference."
+    )
 
     @field_validator("occurrence_time")
     @classmethod
@@ -53,7 +65,7 @@ class UsageEventCreate(BaseModel):
 
     @field_validator("quantity")
     @classmethod
-    def validate_quantity(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def validate_quantity(cls, v: Decimal | None) -> Decimal | None:
         if v is not None:
             if v < 0:
                 raise ValueError("Quantity cannot be negative.")
@@ -64,7 +76,11 @@ class UsageEventCreate(BaseModel):
     @model_validator(mode="after")
     def verify_contradiction_contracts(self) -> "UsageEventCreate":
         if self.is_unknown and self.quantity is not None:
-            raise ValueError("Contradictory Input: Cannot define explicit quantity when marked as unknown.")
+            raise ValueError(
+                "Contradictory Input: Cannot define explicit quantity when marked as unknown."
+            )
         if not self.is_unknown and self.quantity is None:
-            raise ValueError("Contradictory Input: Must specify quantity or explicitly mark as unknown.")
+            raise ValueError(
+                "Contradictory Input: Must specify quantity or explicitly mark as unknown."
+            )
         return self
