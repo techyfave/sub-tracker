@@ -15,6 +15,10 @@ from app.infrastructure.database.models import (  # DB models and enums
     WorkStatus,  # analysis status enum
 )
 
+# stored analysis states the public vocabulary cannot express yet; their recommendations
+# are hidden until issue #13 decides how to publish them
+UNPUBLISHED_ANALYSIS_STATUSES: list[WorkStatus] = [WorkStatus.CANCELLED]
+
 
 class SqlAlchemyRecommendationReadRepository:
     """Read-only access to recommendation snapshots. It never writes."""
@@ -104,6 +108,7 @@ class SqlAlchemyRecommendationReadRepository:
                     RecommendationModel.id == recommendation_id,  # right row
                     RecommendationModel.user_id == user_id,  # right owner
                     AnalysisModel.user_id == user_id,  # analysis has the same owner
+                    AnalysisModel.status.not_in(UNPUBLISHED_ANALYSIS_STATUSES),  # hide unpublished
                 )
             )
         )
@@ -135,7 +140,9 @@ class SqlAlchemyRecommendationReadRepository:
         conditions: list[ColumnElement[bool]] = [
             RecommendationModel.user_id == user_id,  # right owner
             AnalysisModel.user_id == user_id,  # analysis has the same owner
+            AnalysisModel.status.not_in(UNPUBLISHED_ANALYSIS_STATUSES),  # hide unpublished
         ]
+
         # optional analysis status filter
         if status is not None:
             # convert text to the DB enum
