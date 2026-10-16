@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -315,11 +316,7 @@ async def ingest_transaction(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_session),
 ) -> dict[str, str]:
-    await verify_active_subscription(
-        id,
-        current_user.id,
-        db,
-    )
+    await verify_active_subscription(id, current_user.id, db)
 
     insert_statement = sqlite_insert if db.get_bind().dialect.name == "sqlite" else postgres_insert
     statement = insert_statement(TransactionModel).values(
@@ -344,9 +341,43 @@ async def ingest_transaction(
                 "currency": statement.excluded.currency,
                 "occurred_at": statement.excluded.occurred_at,
             },
+            # The conflict update is permitted only for the same subscription.
+            where=TransactionModel.subscription_id == id,
         )
 
-    await db.execute(statement)
+    result = await db.execute(statement.returning(TransactionModel.id))
+    transaction_id = result.scalar_one_or_none()
+
+    if transaction_id is None:
+        # The guarded conflict update returned no row. Resolve the key only
+        # after the atomic conflict operation, never with a preliminary SELECT.
+        if payload.external_reference is not None:
+            existing_result = await db.execute(
+                select(TransactionModel.subscription_id).where(
+                    TransactionModel.user_id == current_user.id,
+                    TransactionModel.source == payload.source,
+                    TransactionModel.external_reference == payload.external_reference,
+                )
+            )
+            existing_subscription_id = existing_result.scalar_one_or_none()
+        else:
+            existing_subscription_id = None
+
+        await db.rollback()
+
+        if existing_subscription_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This transaction reference is already associated with another subscription."
+                ),
+            )
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The transaction could not be recorded safely.",
+        )
+
     await db.commit()
 
     return {
@@ -406,7 +437,67 @@ async def ingest_usage_event(
             ],
         )
 
-    await db.execute(statement)
+    result = await db.execute(statement.returning(UsageEventModel.id))
+    event_id = result.scalar_one_or_none()
+
+    if event_id is None:
+        # A duplicate key was ignored. Inspect the existing event in this
+        # transaction to distinguish a safe replay from incompatible reuse.
+        if payload.idempotency_key is None:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The usage event could not be recorded safely.",
+            )
+
+        existing_result = await db.execute(
+            select(UsageEventModel).where(
+                UsageEventModel.user_id == current_user.id,
+                UsageEventModel.source == payload.source,
+                UsageEventModel.idempotency_key == payload.idempotency_key,
+            )
+        )
+        existing_event = existing_result.scalar_one_or_none()
+
+        if existing_event is None:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The idempotency conflict could not be resolved safely.",
+            )
+
+        if existing_event.subscription_id != payload.subscription_id:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=("This idempotency key is already associated with another subscription."),
+            )
+
+        existing_time = existing_event.occurred_at
+        requested_time = payload.occurrence_time
+
+        # SQLite may return a naive datetime; PostgreSQL normally returns
+        # a timezone-aware value. Normalize both before comparing instants.
+        if existing_time.tzinfo is None:
+            existing_time = existing_time.replace(tzinfo=UTC)
+        else:
+            existing_time = existing_time.astimezone(UTC)
+
+        requested_time = requested_time.astimezone(UTC)
+
+        same_payload = (
+            existing_time == requested_time
+            and existing_event.quantity == payload.quantity
+            and existing_event.is_unknown == payload.is_unknown
+        )
+
+        if not same_payload:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=("This idempotency key was already used with a different usage payload."),
+            )
+
     await db.commit()
 
     return {

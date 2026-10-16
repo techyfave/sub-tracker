@@ -148,11 +148,11 @@ async def test_transaction_duplicate_updates_existing_record(
     assert transactions[0].amount == Decimal("59.9900")
 
 
-async def test_usage_event_duplicate_key_is_ignored(
+async def test_usage_event_duplicate_key_is_idempotent(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """A repeated usage idempotency key must not duplicate the event."""
+    """Exact retries succeed; reusing a key with changed data conflicts."""
     headers = await _register_and_login(client)
     subscription_id = await _create_subscription(
         client,
@@ -160,29 +160,48 @@ async def test_usage_event_duplicate_key_is_ignored(
         headers,
     )
 
-    for quantity in ("12.50", "15.00"):
-        response = await client.post(
-            USAGE_EVENTS_PATH,
-            headers=headers,
-            json=_usage_payload(
-                subscription_id,
-                idempotency_key="usage-duplicate-001",
-                quantity=quantity,
-            ),
-        )
-        assert response.status_code == 201, response.text
-
-    count = await db_session.scalar(
-        select(func.count())
-        .select_from(UsageEventModel)
-        .where(
-            UsageEventModel.user_id.is_not(None),
-            UsageEventModel.source == "datadog",
-            UsageEventModel.idempotency_key == "usage-duplicate-001",
-        )
+    payload = _usage_payload(
+        subscription_id,
+        idempotency_key="usage-duplicate-001",
+        quantity="12.50",
     )
 
-    assert count == 1
+    first_response = await client.post(
+        USAGE_EVENTS_PATH,
+        headers=headers,
+        json=payload,
+    )
+    assert first_response.status_code == 201, first_response.text
+
+    replay_response = await client.post(
+        USAGE_EVENTS_PATH,
+        headers=headers,
+        json=payload,
+    )
+    assert replay_response.status_code == 201, replay_response.text
+
+    changed_response = await client.post(
+        USAGE_EVENTS_PATH,
+        headers=headers,
+        json={**payload, "quantity": "15.00"},
+    )
+    assert changed_response.status_code == 409, changed_response.text
+
+    events = (
+        (
+            await db_session.execute(
+                select(UsageEventModel).where(
+                    UsageEventModel.source == "datadog",
+                    UsageEventModel.idempotency_key == "usage-duplicate-001",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert len(events) == 1
+    assert events[0].quantity == Decimal("12.5000")
 
 
 async def test_usage_events_without_key_can_be_recorded_separately(

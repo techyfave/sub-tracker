@@ -1,10 +1,11 @@
-﻿"""Add idempotency keys to usage events.
+"""Add idempotency keys to usage events.
 
 Revision ID: c24000000001
 Revises: b12000000001
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "c24000000001"
