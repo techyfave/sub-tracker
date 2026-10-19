@@ -1,0 +1,61 @@
+name: sub-tracker
+
+x-backend: &backend
+  build: ./backend
+  environment: &environment
+    DATABASE_URL: postgresql+asyncpg://sub_tracker:sub_tracker_local@postgres:5432/sub_tracker
+    REDIS_URL: redis://redis:6379/0
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: sub_tracker
+      POSTGRES_USER: sub_tracker
+      POSTGRES_PASSWORD: sub_tracker_local
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sub_tracker -d sub_tracker"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["127.0.0.1:${REDIS_PORT:-6379}:6379"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build: ./backend
+    environment: *environment
+    command: ["uv", "run", "--no-dev", "alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  api:
+    <<: *backend
+    command: ["uv", "run", "--no-dev", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:${API_PORT:-8000}:8000"]
+  worker:
+    <<: *backend
+    command: ["uv", "run", "--no-dev", "celery", "-A", "app.infrastructure.jobs.celery_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    restart: unless-stopped
+  scheduler:
+    <<: *backend
+    command: ["uv", "run", "--no-dev", "celery", "-A", "app.infrastructure.jobs.celery_app:celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+

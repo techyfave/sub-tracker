@@ -13,6 +13,7 @@ from app.infrastructure.database.repositories import (
 )
 
 REQUIRED_TABLES = {
+    "jobs",
     "actions",
     "analyses",
     "audit_events",
@@ -38,6 +39,7 @@ REQUIRED_TABLES = {
 }
 
 USER_OWNED_TABLES = {
+    "jobs",
     "actions",
     "analyses",
     "audit_events",

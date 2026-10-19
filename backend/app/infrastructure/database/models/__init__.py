@@ -24,6 +24,7 @@ from app.infrastructure.database.models.core import (
     WorkStatus,
     prevent_immutable_update,
 )
+from app.infrastructure.database.models.job import JobModel
 from app.infrastructure.database.models.refresh_token import RefreshTokenModel
 from app.infrastructure.database.models.subscription import SubscriptionModel
 from app.infrastructure.database.models.user import UserModel
@@ -38,6 +39,7 @@ __all__ = [
     "EvaluationResultModel",
     "EvaluationRunModel",
     "MessageModel",
+    "JobModel",
     "PlanModel",
     "PromptVersionModel",
     "ProviderConnectionModel",

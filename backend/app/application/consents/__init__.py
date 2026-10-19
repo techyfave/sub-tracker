@@ -1,0 +1,1 @@
+"""Consent application use cases."""

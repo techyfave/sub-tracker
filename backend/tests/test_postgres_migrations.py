@@ -9,6 +9,7 @@ import asyncpg
 import pytest
 
 EXPECTED_CORE_TABLES = {
+    "jobs",
     "actions",
     "analyses",
     "audit_events",
@@ -31,7 +32,7 @@ EXPECTED_CORE_TABLES = {
     "usage_events",
 }
 # tables that must exist after migration but that the demo seed does not fill
-TABLES_NOT_SEEDED = {"subscription_alternatives"}
+TABLES_NOT_SEEDED = {"subscription_alternatives", "jobs"}
 
 
 def _database_urls() -> tuple[str, str]:
