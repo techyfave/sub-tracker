@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.jobs import IdempotencyConflict, JobRequest, JobStatus
 from app.infrastructure.database.models.job import JobModel
+from app.infrastructure.jobs.runner import sync_analysis
 
 
 class PostgresJobRepository:
@@ -66,4 +67,5 @@ class PostgresJobRepository:
         job.lease_until = None
         job.run_token = None
         # Retain failure_code until the next attempt succeeds for operator diagnosis.
+        await sync_analysis(self.session, job)
         return True

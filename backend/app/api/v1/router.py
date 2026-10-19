@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.endpoints.analyses import router as analyses_router
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.consents import router as consents_router
 from app.api.v1.endpoints.health import router as health_router
@@ -18,3 +19,5 @@ router.include_router(subscriptions_router)
 router.include_router(recommendations_router)
 
 router.include_router(consents_router)
+
+router.include_router(analyses_router)
