@@ -15,7 +15,15 @@ from app.application.analyses.pipeline import (
     RecommendationDraft,
 )
 from app.application.jobs import PermanentJobError
-from app.domain.analysis.features import classify_usage, evidence_freshness, normalize_cost
+from app.domain.analysis.features import (
+    AnalysisStatus,
+    calculate_savings,
+    charges_per_year,
+    classify_usage,
+    evidence_freshness,
+    normalize_cost,
+)
+from app.domain.subscriptions.entities import BillingCadence, Plan
 from app.infrastructure.database.models.core import (
     AnalysisModel,
     PlanModel,
@@ -29,6 +37,25 @@ from app.infrastructure.database.models.core import (
     UsageEventModel,
 )
 from app.infrastructure.database.models.job import JobModel
+
+
+def domain_plan(row: PlanModel) -> Plan:
+    try:
+        cadence = BillingCadence(row.billing_interval)
+    except ValueError:
+        raise PermanentJobError("unsupported_cost") from None
+    return Plan(
+        id=row.id,
+        provider_id=row.provider_id,
+        name=row.name,
+        amount=row.amount,
+        currency=row.currency,
+        billing_interval=cadence,
+    )
+
+
+def timestamp(value: datetime) -> str:
+    return (value.replace(tzinfo=UTC) if value.tzinfo is None else value).isoformat()
 
 
 async def run_analysis(
@@ -102,7 +129,7 @@ async def run_analysis(
             {
                 "amount": str(row.amount),
                 "currency": row.currency,
-                "occurred_at": row.occurred_at.isoformat(),
+                "occurred_at": timestamp(row.occurred_at),
             },
         )
         for row in transactions
@@ -114,7 +141,7 @@ async def run_analysis(
                 "kind": row.kind,
                 "is_unknown": row.is_unknown,
                 "quantity": str(row.quantity) if row.quantity is not None else None,
-                "occurred_at": row.occurred_at.isoformat(),
+                "occurred_at": timestamp(row.occurred_at),
             },
         )
         for row in usage
@@ -185,10 +212,7 @@ async def run_analysis(
     ):
         raise PermanentJobError("unsupported_recommendation")
     monthly = annual = Decimal("0")
-    if draft.action == RecommendationAction.CANCEL:
-        if cost.monthly is None or cost.annual is None:
-            raise PermanentJobError("unsupported_cost")
-        monthly, annual = cost.monthly.amount, cost.annual.amount
+    alternative_plan: Plan | None = None
     if draft.action == RecommendationAction.DOWNGRADE:
         alternative = next(
             (row for row in alternatives if row.id == draft.alternative_plan_id), None
@@ -200,22 +224,25 @@ async def run_analysis(
             or freshness.value != "fresh"
         ):
             raise PermanentJobError("unsupported_alternative")
-        alternative_cost = normalize_cost(
-            alternative.amount,
-            alternative.currency,
-            alternative.billing_interval,
-        )
-        if (
-            cost.monthly is None
-            or cost.annual is None
-            or alternative_cost.monthly is None
-            or alternative_cost.annual is None
-        ):
+        alternative_plan = domain_plan(alternative)
+        current_periods = charges_per_year(plan.billing_interval)
+        alternative_periods = charges_per_year(alternative_plan.billing_interval)
+        if current_periods is None or alternative_periods is None:
             raise PermanentJobError("unsupported_cost")
-        monthly = cost.monthly.amount - alternative_cost.monthly.amount
-        annual = cost.annual.amount - alternative_cost.annual.amount
-        if monthly <= 0 or annual <= 0:
+        # Compare exact annual costs before either display value is rounded.
+        if plan.amount * current_periods <= alternative_plan.amount * alternative_periods:
             raise PermanentJobError("alternative_not_cheaper")
+    if draft.action in (RecommendationAction.CANCEL, RecommendationAction.DOWNGRADE):
+        savings = calculate_savings(domain_plan(plan), alternative_plan)
+        if savings.status == AnalysisStatus.CURRENCY_MISMATCH:
+            raise PermanentJobError("unsupported_alternative")
+        if savings.status != AnalysisStatus.OK or savings.monthly is None or savings.annual is None:
+            raise PermanentJobError("unsupported_cost")
+        monthly, annual = savings.monthly.amount, savings.annual.amount
+        # A positive annual saving may have a zero monthly display. Accept it
+        # when the annual saving is representable; reject sub-cent annual gains.
+        if draft.action == RecommendationAction.DOWNGRADE and annual <= 0:
+            raise PermanentJobError("savings_below_precision")
     recommendation = RecommendationModel(
         id=uuid4(),
         user_id=job.user_id,

@@ -49,22 +49,40 @@ def to_stored_status(public: AnalysisStatus) -> str:
 
 # a value is safe to publish only if it is a short simple token, never free text
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
+# Numeric(18, 4) snapshots remain decimal strings; never coerce through float.
+_PUBLIC_DECIMAL = re.compile(r"^[0-9]{1,14}(?:\.[0-9]{1,4})?$")
+_PUBLIC_CURRENCY = re.compile(r"^[A-Z]{3}$")
+_PUBLIC_CADENCES = frozenset({"daily", "weekly", "monthly", "yearly"})
+TYPED_EVIDENCE_KEYS = frozenset(
+    {
+        "amount",
+        "currency",
+        "occurred_at",
+        "kind",
+        "is_unknown",
+        "quantity",
+        "billing_interval",
+    }
+)
 # the only uncertainty keys that are public
 PUBLIC_UNCERTAINTY_KEYS = ("level", "reason")
 # the only evidence snapshot keys that are public
-PUBLIC_EVIDENCE_KEYS = frozenset(
-    {
-        "sessions",  # how many sessions were observed
-        "value_signal",  # high, low, none or uncertain
-        "supports",  # which action the evidence supports
-        "lower_tier_suitable",  # whether a cheaper plan would do
-        "requires_review",  # whether a human must check
-        "usage_available",  # whether usage data existed
-        "reason",  # short reason code
-        "usage_signal",  # usage side of a conflict
-        "billing_signal",  # billing side of a conflict
-        "conflict",  # whether the sources disagree
-    }
+PUBLIC_EVIDENCE_KEYS = (
+    frozenset(
+        {
+            "sessions",  # how many sessions were observed
+            "value_signal",  # high, low, none or uncertain
+            "supports",  # which action the evidence supports
+            "lower_tier_suitable",  # whether a cheaper plan would do
+            "requires_review",  # whether a human must check
+            "usage_available",  # whether usage data existed
+            "reason",  # short reason code
+            "usage_signal",  # usage side of a conflict
+            "billing_signal",  # billing side of a conflict
+            "conflict",  # whether the sources disagree
+        }
+    )
+    | TYPED_EVIDENCE_KEYS
 )
 # the kinds of value an evidence snapshot may publish
 PublicValue = str | int | bool | None
@@ -89,8 +107,33 @@ def public_snapshot(raw: dict[str, Any]) -> dict[str, PublicValue]:
     return {
         key: value
         for key, value in raw.items()
-        if key in PUBLIC_EVIDENCE_KEYS and _is_public_value(value)
+        if key in PUBLIC_EVIDENCE_KEYS and _is_public_evidence_value(key, value)
     }
+
+
+def _is_public_evidence_value(key: str, value: object) -> bool:
+    """Validate new evidence fields by type, retaining the #14 summary contract."""
+    if key in ("amount", "quantity"):
+        if key == "quantity" and value is None:
+            return True  # Missing quantity is distinct from an observed zero.
+        return isinstance(value, str) and _PUBLIC_DECIMAL.fullmatch(value) is not None
+    if key == "currency":
+        return isinstance(value, str) and _PUBLIC_CURRENCY.fullmatch(value) is not None
+    if key == "is_unknown":
+        return isinstance(value, bool)
+    if key == "kind":
+        return isinstance(value, str) and _SAFE_TOKEN.fullmatch(value) is not None
+    if key == "billing_interval":
+        return isinstance(value, str) and value in _PUBLIC_CADENCES
+    if key == "occurred_at":
+        if not isinstance(value, str) or len(value) > 40 or "T" not in value:
+            return False
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return False
+        return parsed.tzinfo is not None and parsed.utcoffset() is not None
+    return _is_public_value(value)
 
 
 def public_uncertainty(raw: dict[str, Any]) -> dict[str, str | None]:

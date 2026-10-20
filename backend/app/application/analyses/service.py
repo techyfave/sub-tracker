@@ -28,7 +28,7 @@ async def create_analysis(
     subscription_id: UUID,
     key: str,
 ) -> AnalysisModel:
-    existing = await session.scalar(
+    existing: AnalysisModel | None = await session.scalar(
         select(AnalysisModel).where(
             AnalysisModel.user_id == user_id,
             AnalysisModel.idempotency_key == key,
@@ -86,17 +86,17 @@ async def create_analysis(
             session.add(analysis)
             await session.flush()
     except IntegrityError:
-        existing = await session.scalar(
+        recovered: AnalysisModel | None = await session.scalar(
             select(AnalysisModel).where(
                 AnalysisModel.user_id == user_id,
                 AnalysisModel.idempotency_key == key,
             )
         )
-        if existing is None:
+        if recovered is None:
             raise
-        if existing.subscription_id != subscription_id:
+        if recovered.subscription_id != subscription_id:
             raise IdempotencyConflict("Key already used for another subscription") from None
-        return existing
+        return recovered
     await PostgresJobRepository(session).enqueue(
         JobRequest(
             user_id,

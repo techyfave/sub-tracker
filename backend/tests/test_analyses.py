@@ -251,7 +251,6 @@ async def test_worker_actions_and_deterministic_savings(client, db_session, prep
     from sqlalchemy import update
 
     from app.infrastructure.database.models.core import (
-        PlanModel,
         SubscriptionAlternativeModel,
     )
 
@@ -297,19 +296,12 @@ async def test_worker_actions_and_deterministic_savings(client, db_session, prep
     assert row.recommended_action.value == action
     if action == "review":
         assert row.monthly_savings_amount == 0
+    elif action == "cancel":
+        assert row.monthly_savings_amount == Decimal("6000.00")
+        assert row.annual_savings_amount == Decimal("72000.00")
     else:
-        from app.domain.analysis.features import normalize_cost
-
-        current = await db_session.get(PlanModel, seed.STANDARD_PLAN_ID)
-        cost = normalize_cost(current.amount, current.currency, current.billing_interval)
-        expected = cost.monthly.amount
-        if action == "downgrade":
-            alternative = await db_session.get(PlanModel, seed.BASIC_PLAN_ID)
-            expected -= normalize_cost(
-                alternative.amount, alternative.currency, alternative.billing_interval
-            ).monthly.amount
-        assert row.monthly_savings_amount == expected
-        assert row.annual_savings_amount == expected * 12
+        assert row.monthly_savings_amount == Decimal("3000.00")
+        assert row.annual_savings_amount == Decimal("36000.00")
 
 
 @pytest.mark.parametrize(
@@ -350,3 +342,185 @@ async def test_http_provider_error_classification(monkeypatch, failure, expected
     monkeypatch.setattr(pipeline, "urlopen", send)
     with pytest.raises(expected):
         await pipeline.HttpAnalysisPipeline().recommend({})
+
+
+@pytest.mark.parametrize(
+    "current_price,current_cadence,alternative_price,alternative_cadence,monthly,annual",
+    [
+        ("120.07", "yearly", "100.01", "yearly", "1.67", "20.06"),
+        ("10.005", "monthly", "100.01", "yearly", "1.67", "20.05"),
+        ("2.31", "weekly", "100.01", "yearly", "1.68", "20.11"),
+        ("0.3333", "daily", "10.001", "monthly", "0.14", "1.64"),
+        ("100.02", "yearly", "100.01", "yearly", "0.00", "0.01"),
+        ("100.01", "yearly", "100.01", "yearly", None, None),
+        ("100.00", "yearly", "100.01", "yearly", None, None),
+        ("1.0001", "yearly", "1.0000", "yearly", None, None),
+        ("120.07", "quarterly", "100.01", "yearly", None, None),
+        ("120.07", "yearly", "100.01", "quarterly", None, None),
+    ],
+)
+async def test_downgrade_rounds_exact_difference_once(
+    client,
+    db_session,
+    prepared,
+    current_price,
+    current_cadence,
+    alternative_price,
+    alternative_cadence,
+    monthly,
+    annual,
+):
+    from sqlalchemy import update
+
+    from app.infrastructure.database.models.core import PlanModel, SubscriptionAlternativeModel
+
+    await db_session.execute(
+        update(PlanModel)
+        .where(PlanModel.id == seed.STANDARD_PLAN_ID)
+        .values(
+            amount=Decimal(current_price),
+            billing_interval=current_cadence,
+        )
+    )
+    await db_session.execute(
+        update(PlanModel)
+        .where(PlanModel.id == seed.BASIC_PLAN_ID)
+        .values(
+            amount=Decimal(alternative_price),
+            billing_interval=alternative_cadence,
+        )
+    )
+    await db_session.execute(
+        update(UsageEventModel)
+        .where(
+            UsageEventModel.subscription_id == seed.KEEP_SUBSCRIPTION_ID,
+        )
+        .values(occurred_at=datetime.now(UTC), quantity=2, is_unknown=False)
+    )
+    db_session.add(
+        SubscriptionAlternativeModel(
+            subscription_id=seed.KEEP_SUBSCRIPTION_ID,
+            plan_id=seed.BASIC_PLAN_ID,
+        )
+    )
+    await db_session.commit()
+    created = await create(client)
+    assert created.status_code == 202, created.text
+    job = await db_session.scalar(select(JobModel))
+
+    class Pipeline(FakePipeline):
+        async def recommend(self, context):
+            draft = await super().recommend(context)
+            return draft.model_copy(update={"alternative_plan_id": seed.BASIC_PLAN_ID})
+
+    async def handler(session, job):
+        await run_analysis(session, job, Pipeline(action="downgrade"))
+
+    await JobRunner(
+        async_sessionmaker(db_session.bind, expire_on_commit=False), {"analysis.run": handler}
+    ).execute(job.id)
+    poll = await client.get(created.headers["location"])
+    if monthly is None:
+        assert poll.json()["status"] == "failed", poll.text
+        assert (
+            await db_session.scalar(
+                select(RecommendationModel).where(
+                    RecommendationModel.analysis_id == UUID(created.json()["id"]),
+                )
+            )
+            is None
+        )
+        return
+    assert poll.json()["status"] == "completed", poll.text
+    row = await db_session.scalar(
+        select(RecommendationModel).where(
+            RecommendationModel.analysis_id == UUID(created.json()["id"]),
+        )
+    )
+    assert row.monthly_savings_amount == Decimal(monthly)
+    assert row.annual_savings_amount == Decimal(annual)
+
+
+async def test_generated_evidence_survives_public_list_and_detail(client, db_session, prepared):
+    from sqlalchemy import event, update
+
+    now = datetime.now(UTC)
+    await db_session.execute(
+        update(TransactionModel)
+        .where(
+            TransactionModel.subscription_id == seed.KEEP_SUBSCRIPTION_ID,
+        )
+        .values(amount=Decimal("12.3456"), occurred_at=now)
+    )
+    await db_session.execute(
+        update(UsageEventModel)
+        .where(
+            UsageEventModel.subscription_id == seed.KEEP_SUBSCRIPTION_ID,
+        )
+        .values(is_unknown=True, quantity=None, occurred_at=now)
+    )
+    await db_session.commit()
+    created = await create(client)
+    job = await db_session.scalar(select(JobModel))
+
+    def add_internal_values(mapper, connection, target):
+        target.snapshot_json = {
+            **target.snapshot_json,
+            "provider_api_key": "private-provider-secret",
+            "model_trace": "private-model-trace",
+            "metadata": {"access_token": "nested-secret"},
+            "reason": {"access_token": "nested-secret"},
+        }
+
+    async def handler(session, job):
+        await run_analysis(session, job, FakePipeline(action="review"))
+
+    event.listen(RecommendationEvidenceModel, "before_insert", add_internal_values)
+    try:
+        await JobRunner(
+            async_sessionmaker(db_session.bind, expire_on_commit=False), {"analysis.run": handler}
+        ).execute(job.id)
+    finally:
+        event.remove(RecommendationEvidenceModel, "before_insert", add_internal_values)
+    poll = await client.get(created.headers["location"])
+    assert poll.json()["status"] == "completed", poll.text
+    listing = await client.get(
+        "/api/v1/recommendations",
+        params={
+            "subscription_id": str(seed.KEEP_SUBSCRIPTION_ID),
+        },
+    )
+    assert listing.status_code == 200, listing.text
+    item = next(
+        row
+        for row in listing.json()["items"]
+        if row["analysis"]["analysis_id"] == created.json()["id"]
+    )
+    detail = await client.get(f"/api/v1/recommendations/{item['id']}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json() == item
+    for response in (listing, detail):
+        for marker in (
+            "provider_api_key",
+            "private-provider-secret",
+            "model_trace",
+            "private-model-trace",
+            "access_token",
+            "nested-secret",
+            "metadata",
+        ):
+            assert marker not in response.text
+    by_table = {}
+    for evidence in item["evidence"]:
+        assert evidence["snapshot"], evidence
+        assert evidence["source_id"] is not None
+        assert "reason" not in evidence["snapshot"]
+        by_table[evidence["source_table"]] = evidence["snapshot"]
+    assert Decimal(by_table["transactions"]["amount"]) == Decimal("12.3456")
+    assert by_table["transactions"]["currency"] == "NGN"
+    assert datetime.fromisoformat(by_table["transactions"]["occurred_at"]).tzinfo is not None
+    assert by_table["usage_events"]["is_unknown"] is True
+    assert by_table["usage_events"]["quantity"] is None
+    assert by_table["usage_events"]["kind"]
+    assert Decimal(by_table["plans"]["amount"]) > 0
+    assert by_table["plans"]["billing_interval"] == "monthly"

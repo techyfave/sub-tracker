@@ -76,3 +76,10 @@ uv run mypy app
 Set `TEST_DATABASE_URL` and `TEST_REDIS_URL` to run the existing real-service
 worker/migration tests. SQLite tests verify API behavior and rollback, but cannot
 prove PostgreSQL row-lock or concurrent request behavior.
+
+Public billing/usage/plan evidence uses the field-specific contract in
+[recommendations-api.md](recommendations-api.md#typed-billing-usage-and-plan-evidence-issues-10111314).
+AI adapters for issues #10/#11 consume the same stored evidence fields and cite
+provided source IDs. Recommendation list and detail endpoints retain validated
+amounts as decimal strings, unknown usage flags/null quantities, and provenance;
+internal metadata and model traces remain excluded.
