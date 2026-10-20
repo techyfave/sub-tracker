@@ -98,6 +98,8 @@ def test_mark_deleted():
         name="Netflix",
     )
 
+    # Avoid depending on two clock reads falling in different clock ticks.
+    subscription.updated_at = datetime(2020, 1, 1, tzinfo=UTC)
     old_updated_at = subscription.updated_at
 
     assert subscription.deleted_at is None

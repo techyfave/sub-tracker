@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.application.jobs import JobStatus, PermanentJobError, RetryableJobError
+from app.infrastructure.database.models.core import AnalysisModel, WorkStatus
 from app.infrastructure.database.models.job import JobModel
 
 Handler = Callable[[AsyncSession, JobModel], Awaitable[None]]
@@ -23,6 +24,24 @@ def due(now: datetime) -> ColumnElement[bool]:
         and_(JobModel.status == JobStatus.QUEUED, JobModel.available_at <= now),
         and_(JobModel.status == JobStatus.RUNNING, JobModel.lease_until <= now),
     )
+
+
+async def sync_analysis(session: AsyncSession, job: JobModel) -> None:
+    """Mirror durable execution state in the same transaction, including failures."""
+    if job.job_type != "analysis.run":
+        return
+    analysis = await session.scalar(
+        select(AnalysisModel).where(
+            AnalysisModel.id == UUID(job.payload["analysis_id"]),
+            AnalysisModel.user_id == job.user_id,
+        )
+    )
+    if analysis is not None:
+        analysis.status = WorkStatus(job.status.value)
+        analysis.attempt_count = job.attempt_count
+        analysis.failure_code = job.failure_code
+        analysis.started_at = job.started_at
+        analysis.completed_at = job.completed_at
 
 
 class JobRunner:
@@ -59,6 +78,7 @@ class JobRunner:
                 job.completed_at = now
                 job.lease_until = None
                 job.run_token = None
+                await sync_analysis(session, job)
                 return None
             token = uuid4()
             job.status = JobStatus.RUNNING
@@ -66,6 +86,7 @@ class JobRunner:
             job.started_at = now
             job.lease_until = now + timedelta(seconds=self.lease_seconds)
             job.run_token = token
+            await sync_analysis(session, job)
             logger.info("job_claimed job_id=%s attempt=%s", job.id, job.attempt_count)
             return token
 
@@ -100,6 +121,7 @@ class JobRunner:
                 job.failure_code = None
                 job.lease_until = None
                 job.run_token = None
+                await sync_analysis(session, job)
             logger.info("job_succeeded job_id=%s", job_id)
         except Exception as exc:
             # The context above has rolled back domain writes before failure is saved.
@@ -136,6 +158,7 @@ class JobRunner:
                 else:
                     job.status = JobStatus.FAILED
                     job.completed_at = now
+                await sync_analysis(session, job)
                 logger.warning(
                     "job_failure job_id=%s status=%s code=%s attempt=%s",
                     job.id,

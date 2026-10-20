@@ -6,6 +6,7 @@ from celery import Celery  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.application.analyses.worker import run_analysis
 from app.core.config import get_settings
 from app.infrastructure.database.models.job import JobModel
 from app.infrastructure.jobs.runner import Handler, JobRunner, dispatch_due
@@ -46,7 +47,7 @@ async def probe(session: AsyncSession, job: JobModel) -> None:
 
 
 # Issue #13 and #16 register their real transactional handlers here.
-HANDLERS: dict[str, Handler] = {"system.probe": probe}
+HANDLERS: dict[str, Handler] = {"system.probe": probe, "analysis.run": run_analysis}
 
 
 async def with_sessions(

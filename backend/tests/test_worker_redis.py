@@ -18,11 +18,14 @@ from app.infrastructure.database.models.user import UserModel
 from app.infrastructure.database.repositories.jobs import PostgresJobRepository
 
 
-def test_celery_dispatch_duplicate_delivery_and_restart(tmp_path: Path) -> None:
+def test_celery_dispatch_duplicate_delivery_and_restart(request: pytest.FixtureRequest) -> None:
     url = os.getenv("TEST_DATABASE_URL")
     redis_url = os.getenv("TEST_REDIS_URL")
     if not url or not redis_url:
         pytest.skip("TEST_DATABASE_URL and TEST_REDIS_URL required for real broker test")
+    # Resolve only after checking services: tmp_path setup can fail on locked
+    # Windows temp directories even when this optional test should be skipped.
+    tmp_path: Path = request.getfixturevalue("tmp_path")
     from celery import Celery
 
     queue = "worker-test-" + uuid4().hex
