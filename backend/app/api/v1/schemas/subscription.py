@@ -1,4 +1,3 @@
-
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -170,11 +169,11 @@ class SubscriptionResponse(BaseModel):
                     "provider_connection_id": None,
                     "name": "Music Subscription",
                     "status": "active",
-                    "started_at": "2026-10-01T10:00:00",
-                    "renewal_at": "2026-11-01T10:00:00",
+                    "started_at": "2026-10-01T10:00:00Z",
+                    "renewal_at": "2026-11-01T10:00:00Z",
                     "ended_at": None,
-                    "created_at": "2026-10-01T10:00:00",
-                    "updated_at": "2026-10-01T10:00:00",
+                    "created_at": "2026-10-01T10:00:00Z",
+                    "updated_at": "2026-10-01T10:00:00Z",
                     "deleted_at": None,
                 }
             ]

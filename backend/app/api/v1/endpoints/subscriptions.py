@@ -8,6 +8,23 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.openapi_responses import (
+    PROBLEM_401,
+    SAMPLE_SUBSCRIPTION_PATH,
+    SAMPLE_TRANSACTION_PATH,
+    SUBSCRIPTION_CREATE_422,
+    SUBSCRIPTION_ITEM_404,
+    SUBSCRIPTION_LIST_VALIDATION_ERROR_EXAMPLE,
+    SUBSCRIPTION_PATH_VALIDATION_ERROR_EXAMPLE,
+    SUBSCRIPTION_UPDATE_400,
+    SUBSCRIPTION_UPDATE_422,
+    TRANSACTION_CONFLICT_409,
+    TRANSACTION_VALIDATION_ERROR_EXAMPLE,
+    USAGE_EVENT_422,
+    USAGE_EVENT_CONFLICT_409,
+    problem_response,
+    response_with_instance,
+)
 from app.api.v1.dependencies.auth import CurrentUser
 from app.api.v1.schemas.common import PaginationMeta
 from app.api.v1.schemas.subscription import (
@@ -86,15 +103,17 @@ def convert_required_plan_input(plan_input: PlanInput) -> Plan:
     return plan
 
 
-# ---------------------------------------------------------
-# Create subscription
-# ---------------------------------------------------------
-
-
 @router.post(
     "",
     response_model=SubscriptionResponse,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        401: response_with_instance(
+            PROBLEM_401,
+            "/api/v1/subscriptions",
+        ),
+        422: SUBSCRIPTION_CREATE_422,
+    },
 )
 async def create_subscription(
     request: SubscriptionCreateRequest,
@@ -117,7 +136,6 @@ async def create_subscription(
     try:
         result = await service.create_subscription(dto, current_user)
         return SubscriptionResponse.model_validate(result)
-
     except InvalidSubscriptionReferenceError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -125,14 +143,60 @@ async def create_subscription(
         ) from exc
 
 
-# ---------------------------------------------------------
-# List subscriptions
-# ---------------------------------------------------------
-
-
 @router.get(
     "",
     response_model=SubscriptionListResponse,
+    responses={
+        200: {
+            "description": ("Paginated subscriptions belonging to the authenticated user."),
+            "content": {
+                "application/json": {
+                    "example": {
+                        "items": [
+                            {
+                                "id": "123e4567-e89b-12d3-a456-426614174003",
+                                "user_id": "123e4567-e89b-12d3-a456-426614174004",
+                                "plan_id": "123e4567-e89b-12d3-a456-426614174002",
+                                "plan": {
+                                    "id": "123e4567-e89b-12d3-a456-426614174002",
+                                    "provider_id": ("123e4567-e89b-12d3-a456-426614174001"),
+                                    "name": "Monthly Premium",
+                                    "amount": "5000.00",
+                                    "currency": "NGN",
+                                    "billing_interval": "monthly",
+                                },
+                                "plan_alternatives": [],
+                                "provider_connection_id": None,
+                                "name": "Music Subscription",
+                                "status": "active",
+                                "started_at": "2026-10-01T10:00:00Z",
+                                "renewal_at": "2026-11-01T10:00:00Z",
+                                "ended_at": None,
+                                "created_at": "2026-10-01T10:00:00Z",
+                                "updated_at": "2026-10-01T10:00:00Z",
+                                "deleted_at": None,
+                            }
+                        ],
+                        "pagination": {
+                            "page": 1,
+                            "page_size": 20,
+                            "total_items": 1,
+                            "total_pages": 1,
+                        },
+                    }
+                }
+            },
+        },
+        401: response_with_instance(
+            PROBLEM_401,
+            "/api/v1/subscriptions",
+        ),
+        422: problem_response(
+            "The request contains invalid query parameters.",
+            SUBSCRIPTION_LIST_VALIDATION_ERROR_EXAMPLE,
+            instance="/api/v1/subscriptions",
+        ),
+    },
 )
 async def list_subscriptions(
     current_user: CurrentUser,
@@ -165,14 +229,21 @@ async def list_subscriptions(
     )
 
 
-# ---------------------------------------------------------
-# Get one subscription
-# ---------------------------------------------------------
-
-
 @router.get(
     "/{id}",
     response_model=SubscriptionResponse,
+    responses={
+        401: response_with_instance(
+            PROBLEM_401,
+            SAMPLE_SUBSCRIPTION_PATH,
+        ),
+        404: SUBSCRIPTION_ITEM_404,
+        422: problem_response(
+            "The request contains an invalid subscription ID.",
+            SUBSCRIPTION_PATH_VALIDATION_ERROR_EXAMPLE,
+            instance=SAMPLE_SUBSCRIPTION_PATH,
+        ),
+    },
 )
 async def get_subscription(
     id: uuid.UUID,
@@ -182,7 +253,6 @@ async def get_subscription(
     try:
         result = await service.get_subscription(id, current_user)
         return SubscriptionResponse.model_validate(result)
-
     except SubscriptionNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -190,14 +260,18 @@ async def get_subscription(
         ) from exc
 
 
-# ---------------------------------------------------------
-# Update subscription
-# ---------------------------------------------------------
-
-
 @router.patch(
     "/{id}",
     response_model=SubscriptionResponse,
+    responses={
+        400: SUBSCRIPTION_UPDATE_400,
+        401: response_with_instance(
+            PROBLEM_401,
+            SAMPLE_SUBSCRIPTION_PATH,
+        ),
+        404: SUBSCRIPTION_ITEM_404,
+        422: SUBSCRIPTION_UPDATE_422,
+    },
 )
 async def update_subscription(
     id: uuid.UUID,
@@ -229,19 +303,16 @@ async def update_subscription(
             current_user,
         )
         return SubscriptionResponse.model_validate(result)
-
     except SubscriptionNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Subscription not found",
         ) from exc
-
     except InvalidSubscriptionReferenceError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
-
     except InvalidLifecycleTransitionError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -249,14 +320,21 @@ async def update_subscription(
         ) from exc
 
 
-# ---------------------------------------------------------
-# Delete subscription
-# ---------------------------------------------------------
-
-
 @router.delete(
     "/{id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        401: response_with_instance(
+            PROBLEM_401,
+            SAMPLE_SUBSCRIPTION_PATH,
+        ),
+        404: SUBSCRIPTION_ITEM_404,
+        422: problem_response(
+            "The request contains an invalid subscription ID.",
+            SUBSCRIPTION_PATH_VALIDATION_ERROR_EXAMPLE,
+            instance=SAMPLE_SUBSCRIPTION_PATH,
+        ),
+    },
 )
 async def delete_subscription(
     id: uuid.UUID,
@@ -265,7 +343,6 @@ async def delete_subscription(
 ) -> None:
     try:
         await service.delete_subscription(id, current_user)
-
     except SubscriptionNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -273,16 +350,12 @@ async def delete_subscription(
         ) from exc
 
 
-# ---------------------------------------------------------
-# Verify subscription ownership and active record
-# ---------------------------------------------------------
-
-
 async def verify_active_subscription(
     subscription_id: uuid.UUID,
     user_id: uuid.UUID,
     db: AsyncSession,
 ) -> SubscriptionModel:
+    """Ensure a subscription exists, belongs to the user, and is not deleted."""
     subscription = await db.get(
         SubscriptionModel,
         subscription_id,
@@ -301,14 +374,32 @@ async def verify_active_subscription(
     return subscription
 
 
-# ---------------------------------------------------------
-# Ingest transaction
-# ---------------------------------------------------------
-
-
 @router.post(
     "/{id}/transactions",
     status_code=status.HTTP_201_CREATED,
+    responses={
+        401: response_with_instance(
+            PROBLEM_401,
+            SAMPLE_TRANSACTION_PATH,
+        ),
+        404: problem_response(
+            "The subscription was not found.",
+            {
+                "type": "about:blank",
+                "title": "HTTP Error",
+                "status": 404,
+                "detail": "Subscription not found",
+                "instance": SAMPLE_TRANSACTION_PATH,
+            },
+            instance=SAMPLE_TRANSACTION_PATH,
+        ),
+        409: TRANSACTION_CONFLICT_409,
+        422: problem_response(
+            "The request contains an invalid subscription ID.",
+            TRANSACTION_VALIDATION_ERROR_EXAMPLE,
+            instance=SAMPLE_TRANSACTION_PATH,
+        ),
+    },
 )
 async def ingest_transaction(
     id: uuid.UUID,
@@ -341,7 +432,6 @@ async def ingest_transaction(
                 "currency": statement.excluded.currency,
                 "occurred_at": statement.excluded.occurred_at,
             },
-            # The conflict update is permitted only for the same subscription.
             where=TransactionModel.subscription_id == id,
         )
 
@@ -349,8 +439,6 @@ async def ingest_transaction(
     transaction_id = result.scalar_one_or_none()
 
     if transaction_id is None:
-        # The guarded conflict update returned no row. Resolve the key only
-        # after the atomic conflict operation, never with a preliminary SELECT.
         if payload.external_reference is not None:
             existing_result = await db.execute(
                 select(TransactionModel.subscription_id).where(
@@ -386,14 +474,28 @@ async def ingest_transaction(
     }
 
 
-# ---------------------------------------------------------
-# Ingest usage event
-# ---------------------------------------------------------
-
-
 @router.post(
     "/usage-events",
     status_code=status.HTTP_201_CREATED,
+    responses={
+        401: response_with_instance(
+            PROBLEM_401,
+            "/api/v1/subscriptions/usage-events",
+        ),
+        404: problem_response(
+            "The subscription was not found.",
+            {
+                "type": "about:blank",
+                "title": "HTTP Error",
+                "status": 404,
+                "detail": "Subscription not found",
+                "instance": "/api/v1/subscriptions/usage-events",
+            },
+            instance="/api/v1/subscriptions/usage-events",
+        ),
+        409: USAGE_EVENT_CONFLICT_409,
+        422: USAGE_EVENT_422,
+    },
 )
 async def ingest_usage_event(
     payload: UsageEventCreate,
@@ -441,8 +543,6 @@ async def ingest_usage_event(
     event_id = result.scalar_one_or_none()
 
     if event_id is None:
-        # A duplicate key was ignored. Inspect the existing event in this
-        # transaction to distinguish a safe replay from incompatible reuse.
         if payload.idempotency_key is None:
             await db.rollback()
             raise HTTPException(
@@ -476,8 +576,6 @@ async def ingest_usage_event(
         existing_time = existing_event.occurred_at
         requested_time = payload.occurrence_time
 
-        # SQLite may return a naive datetime; PostgreSQL normally returns
-        # a timezone-aware value. Normalize both before comparing instants.
         if existing_time.tzinfo is None:
             existing_time = existing_time.replace(tzinfo=UTC)
         else:
