@@ -32,28 +32,28 @@ The MVP uses a **deterministic, minimal, relationally valid, idempotent, develop
 
 ```text
 User
- ├── Consent
- ├── ProviderConnection
- └── Subscription
-       ├── Plan
-       ├── Transaction
-       ├── UsageEvent
-       └── Analysis
-              └── Recommendation
-                     └── RecommendationEvidence
+ |-- Consent
+ |-- ProviderConnection
+ `-- Subscription
+     |-- Plan
+     |-- Transaction
+     |-- UsageEvent
+     |-- Analysis
+         `-- Recommendation
+             `-- RecommendationEvidence
 
 Recommendation
- ├── RecommendationDecision
- │     └── Action
- ├── SavingsRecord
- └── Conversation
-       └── Message
+ |-- RecommendationDecision
+ |   `-- Action
+ |-- SavingsRecord
+ `-- Conversation
+     `-- Message
 
 PromptVersion
- └── Analysis
+ `-- Analysis
 
 EvaluationRun
- └── EvaluationResult
+ `-- EvaluationResult
 
 AuditEvent
 ```
@@ -95,23 +95,36 @@ The seed should contain at least:
 - 2 RecommendationDecisions
 - 2 Consents covering granted and revoked states
 - 2 Actions covering simulated success and pending execution
-- 2 SavingsRecords distinguishing estimated and verified savings
+- Exactly **1 estimated `SavingsRecord`** for the seeded downgrade scenario. Do not create a separate fabricated verified savings record.
 - 1 Conversation with 2 Messages
 - 1 PromptVersion referenced by the seeded Analyses
 - 1 EvaluationRun with representative EvaluationResults
-- representative append-only AuditEvents
+- Representative append-only AuditEvents
 
 Exact fixture IDs and timestamps must be fixed rather than generated randomly.
 
 ### Seed rules
 
-- **Deterministic:** same seed produces the same logical records.
-- **Minimal:** include only data needed for development and demonstrations.
-- **Idempotent:** running the seed repeatedly does not create duplicate logical records.
-- **Relationally valid:** foreign keys and domain invariants are satisfied.
-- **Development-only:** seed credentials and data must never be treated as production data.
-- **No live external calls:** providers, AI services, and job brokers are represented through local fixtures/fakes.
-- **NGN demo currency:** seeded monetary values use NGN as required by ADR-005.
+- **Deterministic:** The same seed produces the same logical records.
+- **Minimal:** Include only data needed for development and demonstrations.
+- **Idempotent:** Running the seed repeatedly does not create duplicate logical records.
+- **Relationally valid:** Foreign keys and domain invariants are satisfied.
+- **Development-only:** Seed credentials and data must never be treated as production data.
+- **No live external calls:** Providers, AI services, and job brokers are represented through local fixtures/fakes.
+- **NGN demo currency:** Seeded monetary values use NGN as required by ADR-005.
+- **Evidence-based savings:** The downgrade scenario may show NGN 4,000 in estimated monthly savings and NGN 48,000 in estimated annual savings. These are projections, not confirmed realized savings. Savings must remain estimated until the corresponding action is completed and confirming post-change billing evidence establishes the actual savings. Do not mark savings verified merely because an action was queued, attempted, or simulated.
+
+### Seed implementation lessons
+
+Parent records must be flushed before dependent records are created so that their identifiers are available and foreign-key relationships remain valid. This reflects the lesson from PR #34.
+
+The seed must be run twice against PostgreSQL during integration verification to confirm repeatability and the absence of duplicate logical records. A passing SQLite test alone does not establish PostgreSQL seed behavior.
+
+### Related documentation
+
+See [Demo Seed Scenarios](../seed-scenarios.md) for the six documented scenarios and their expected outcomes.
+
+See [Backend Contributor Runbook](../../backend/docs/contributor-runbook.md) for seed execution, repeatability checks, and development setup.
 
 ## Consequences
 
@@ -121,7 +134,8 @@ Exact fixture IDs and timestamps must be fixed rather than generated randomly.
 - Developers can reproduce bugs using the same data.
 - The seed reflects the actual subscription-tracker domain.
 - Re-running setup is safe.
-- External providers remain behind replaceable adapters.
+- External providers remain behind replaceable interfaces.
+- Savings examples distinguish estimates from verified outcomes.
 
 ### Negative
 

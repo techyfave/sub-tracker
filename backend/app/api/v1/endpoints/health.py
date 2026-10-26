@@ -15,7 +15,16 @@ class HealthResponse(BaseModel):
     version: str
 
 
-@router.get("/live", response_model=HealthResponse)
+HEALTH_OK = {
+    "content": {
+        "application/json": {
+            "example": {"status": "ok", "service": "Sub Tracker API", "version": "0.1.0"}
+        }
+    }
+}
+
+
+@router.get("/live", response_model=HealthResponse, responses={200: HEALTH_OK})
 async def liveness(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> HealthResponse:
@@ -26,12 +35,32 @@ async def liveness(
     )
 
 
-@router.get("/ready", response_model=HealthResponse)
+@router.get(
+    "/ready",
+    response_model=HealthResponse,
+    responses={
+        200: HEALTH_OK,
+        503: {
+            "description": "The database is unavailable or not ready.",
+            "content": {
+                "application/json": {
+                    "schema": HealthResponse.model_json_schema(),
+                    "example": {
+                        "status": "unavailable",
+                        "service": "Sub Tracker API",
+                        "version": "0.1.0",
+                    },
+                }
+            },
+        },
+    },
+)
 async def readiness(
     response: Response,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> HealthResponse:
     ready = await database_is_ready()
+
     if not ready:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
