@@ -13,13 +13,7 @@ def main() -> None:
     schema = app.openapi()
     errors: list[str] = []
 
-    target_prefixes = (
-        "/api/v1/subscriptions",
-        "/api/v1/consents",
-        "/api/v1/health",
-        "/api/v1/auth",
-        "/api/v1/me",
-    )
+    target_prefixes = ("/api/v1/",)
     methods = {"get", "post", "put", "patch", "delete"}
 
     print("OPENAPI RESPONSE AUDIT")
@@ -34,6 +28,33 @@ def main() -> None:
 
             operation_name = f"{method.upper()} {path}"
             responses = operation.get("responses", {})
+            if (
+                operation.get("parameters") or operation.get("requestBody")
+            ) and "422" not in responses:
+                errors.append(f"{operation_name}: missing validation response")
+
+            def has_examples(media: dict[str, Any]) -> bool:
+                if "example" in media or media.get("examples"):
+                    return True
+                shape = media.get("schema", {})
+                if "$ref" in shape:
+                    shape = schema["components"]["schemas"][shape["$ref"].split("/")[-1]]
+                return bool(shape.get("examples"))
+
+            for media in operation.get("requestBody", {}).get("content", {}).values():
+                if not has_examples(media):
+                    errors.append(f"{operation_name}: missing request examples")
+            if "/health/" not in path and "/auth/" not in path and "401" not in responses:
+                errors.append(f"{operation_name}: missing authorization response")
+            for code, documented in responses.items():
+                if code.startswith("4"):
+                    for media in documented.get("content", {}).values():
+                        if not has_examples(media):
+                            errors.append(f"{operation_name} {code}: missing error example")
+                if code.startswith("2") and code != "204":
+                    media = documented.get("content", {}).get("application/json", {})
+                    if not has_examples(media):
+                        errors.append(f"{operation_name} {code}: missing success example")
 
             # Print the operation and its responses on separate lines.
             print()

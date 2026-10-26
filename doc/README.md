@@ -31,7 +31,7 @@ The statuses below distinguish documented or implemented API functionality from 
 ### Roadmap and issue tracking
 
 - **Issue #8 and issue #9 / PR #43:** recorded as merged in the project history.
-- **Issue #14:** PR #37 is being integrated; do not describe the integration as complete until its status is confirmed.
+- **Issue #14:** PR #37 is merged; authenticated recommendation list/detail contracts are implemented.
 - **Issue #11:** AI provider execution remains planned until implementation and verification are complete.
 - **Issues #13–#17:** consult the current issue tracker for their latest implementation and review status rather than inferring completion from documentation alone.
 
@@ -64,3 +64,7 @@ See [TERMINOLOGY.md](TERMINOLOGY.md) for the canonical API/domain vocabulary, ex
 ## Implementation rule
 
 When an implementation decision conflicts with an ADR, the ADR must be updated before implementation proceeds. These ADRs are the source of truth for the MVP backend contracts. Documentation must accurately reflect the implementation and its verification status.
+
+## Implemented recommendation API
+
+Issue #14 / PR #37 is merged: authenticated `GET /api/v1/recommendations` and `GET /api/v1/recommendations/{id}` return immutable snapshots. Use `page`, `page_size`, `status` (queued/running/completed/failed), `action` and `subscription_id` filters. Missing or foreign IDs return the same 404. Invalid filters/IDs return 422; missing authentication returns 401. Generated OpenAPI includes safe evidence, version, uncertainty and estimated-savings examples.

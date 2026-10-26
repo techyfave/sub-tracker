@@ -190,3 +190,8 @@ See:
 ## Security
 
 Default settings, credentials, and seed data are for local development only. Use environment-specific secrets and credentials for shared or deployed environments. Do not commit `.env` files, tokens, passwords, or real user data.
+
+
+## Implemented recommendation API
+
+Issue #14 / PR #37 is merged: authenticated `GET /api/v1/recommendations` and `GET /api/v1/recommendations/{id}` return immutable snapshots. Use `page`, `page_size`, `status` (queued/running/completed/failed), `action` and `subscription_id` filters. Missing or foreign IDs return the same 404. Invalid filters/IDs return 422; missing authentication returns 401. Generated OpenAPI includes safe evidence, version, uncertainty and estimated-savings examples.

@@ -378,6 +378,16 @@ async def verify_active_subscription(
     "/{id}/transactions",
     status_code=status.HTTP_201_CREATED,
     responses={
+        201: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": "Transaction recorded successfully.",
+                    }
+                }
+            }
+        },
         401: response_with_instance(
             PROBLEM_401,
             SAMPLE_TRANSACTION_PATH,
@@ -478,6 +488,16 @@ async def ingest_transaction(
     "/usage-events",
     status_code=status.HTTP_201_CREATED,
     responses={
+        201: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": "Usage event recorded successfully.",
+                    }
+                }
+            }
+        },
         401: response_with_instance(
             PROBLEM_401,
             "/api/v1/subscriptions/usage-events",

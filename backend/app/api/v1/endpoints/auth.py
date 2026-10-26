@@ -187,7 +187,6 @@ async def login(
             REFRESH_VALIDATION_ERROR_EXAMPLE,
             instance="/api/v1/auth/refresh",
         ),
-        429: RATE_LIMIT_RESPONSE,
     },
 )
 async def refresh(

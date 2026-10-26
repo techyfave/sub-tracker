@@ -116,7 +116,7 @@ Exact fixture IDs and timestamps must be fixed rather than generated randomly.
 
 ### Seed implementation lessons
 
-Parent records must be flushed before dependent records are created so that their identifiers are available and foreign-key relationships remain valid. This reflects the lesson from issue #34.
+Parent records must be flushed before dependent records are created so that their identifiers are available and foreign-key relationships remain valid. This reflects the lesson from PR #34.
 
 The seed must be run twice against PostgreSQL during integration verification to confirm repeatability and the absence of duplicate logical records. A passing SQLite test alone does not establish PostgreSQL seed behavior.
 

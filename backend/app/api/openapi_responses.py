@@ -56,7 +56,7 @@ CONSENT_VALIDATION_ERROR_EXAMPLE = validation_example(
 
 SUBSCRIPTION_LIST_VALIDATION_ERROR_EXAMPLE = validation_example(
     instance="/api/v1/subscriptions",
-    location=["query", "limit"],
+    location=["query", "page_size"],
     message="Input should be greater than or equal to 1",
     error_type="greater_than_equal",
 )
@@ -77,7 +77,7 @@ TRANSACTION_VALIDATION_ERROR_EXAMPLE = validation_example(
 
 USAGE_EVENT_VALIDATION_ERROR_EXAMPLE = validation_example(
     instance=SAMPLE_USAGE_EVENT_PATH,
-    location=["body", "idempotency_key"],
+    location=["body", "source"],
     message="Field required",
     error_type="missing",
 )

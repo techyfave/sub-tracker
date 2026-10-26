@@ -149,3 +149,19 @@ These observations verify only the listed paths and outcomes. The schema audit a
 Do not mark a blocked or unrun item as passed without recording the corresponding command and observed result.
 
 The pull request should remain in Draft until the outstanding acceptance requirements and required integration evidence have been addressed.
+
+
+## Maintainer handoff for independent validation
+
+The earlier attempt above remains historical evidence, not a completed acceptance check.
+Fill this section after a different contributor follows the updated runbook:
+
+- Contributor: `FRESH_CONTRIBUTOR_HANDLE`
+- Date: `WALKTHROUGH_DATE`
+- Checked-out commit: `WALKTHROUGH_COMMIT`
+- OS/tool versions: `WALKTHROUGH_ENVIRONMENT`
+- Exact commands, expected/actual outcomes, fixes and service-backed test results: `WALKTHROUGH_RESULTS`
+
+See [handoff instructions](issue-20-handoff.md) for replacements and dependency tracking.
+Agent verification is recorded separately in issue-20-verification.md and does not substitute
+for this independent human walkthrough.

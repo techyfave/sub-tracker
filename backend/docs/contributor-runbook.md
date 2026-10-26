@@ -123,7 +123,17 @@ $env:TEST_REDIS_URL = "redis://localhost:6379/1"
 
 These environment variables apply only to the current terminal session. The database credentials match the repository's local Compose defaults; never use these development credentials in production.
 
-Create the `sub_tracker_test` database explicitly before running database-dependent integration tests. Confirm that the test configuration uses the intended test database and Redis instance before running tests that modify or recreate data.
+Create the disposable test database from the repository root (both Bash and PowerShell):
+
+```sh
+docker compose exec postgres createdb -U sub_tracker sub_tracker_test
+```
+
+Expected: exit 0 with no output. If it already exists, reuse it only if it is disposable.
+Return to `backend/`, set the test URLs above, and run `uv run pytest`.
+The migration tests reset that test database; they must never target `sub_tracker`.
+
+Create the `sub_tracker_test` database before running database-dependent integration tests. Confirm that the test configuration uses the intended test database and Redis instance before running tests that modify or recreate data.
 
 ### Host-local versus Compose configuration
 
@@ -205,7 +215,7 @@ Record the output of both runs and compare the relevant table counts or logical 
 
 Do not claim PostgreSQL seed repeatability has passed until both runs have actually completed and the results have been checked. A SQLite test alone does not establish PostgreSQL behavior.
 
-Parent records must be flushed before dependent records are created so their identifiers are available and foreign-key relationships remain valid. This reflects the lesson from issue #34.
+Parent records must be flushed before dependent records are created so their identifiers are available and foreign-key relationships remain valid. This reflects the lesson from PR #34.
 
 For the six scenarios and their expected behavior, see [Demo Seed Scenarios](../../doc/seed-scenarios.md).
 
@@ -309,7 +319,7 @@ Check the HTTP status, structured error response, request schema, and examples i
 
 - **Ingestion APIs:** Issue #8 is recorded as merged. Verify the supported endpoints and conventions against their implementation and tests.
 - **Deterministic savings calculation:** Issue #9 / PR #43 is recorded as merged. Estimated savings must not be described as realized savings without confirming evidence.
-- **Subscription list/detail work:** Issue #14 / PR #37 was reported as being integrated. Verify its current merge status and endpoint contract before relying on list/detail examples.
+- **Recommendation list/detail:** Issue #14 / PR #37 is merged. See [recommendation contracts](recommendations-api.md); list/detail support ownership, pagination, filters, versions, uncertainty, savings and evidence.
 - **AI provider execution:** Remains planned until issue #11 is implemented and verified. Do not claim live AI execution or invent provider-execution flags.
 - **Issues #13–#17:** Check the current issue tracker for the latest implementation and review status instead of inferring completion from this runbook.
 
@@ -331,3 +341,79 @@ See the [Fresh Contributor Walkthrough](../../doc/contributor-walkthrough.md) fo
 - Record environment limitations honestly in the contributor walkthrough.
 
 Do not mark the pull request ready for review until its acceptance requirements and required integration evidence have been addressed.
+
+## Implemented recommendation API
+
+Issue #14 / PR #37 is merged: authenticated `GET /api/v1/recommendations` and `GET /api/v1/recommendations/{id}` return immutable snapshots. Use `page`, `page_size`, `status` (queued/running/completed/failed), `action` and `subscription_id` filters. Missing or foreign IDs return the same 404. Invalid filters/IDs return 422; missing authentication returns 401. Generated OpenAPI includes safe evidence, version, uncertainty and estimated-savings examples.
+
+
+## Exact worker smoke check
+
+From the repository root after the seed command, run:
+
+```sh
+docker compose exec api uv run python -m app.infrastructure.jobs.cli probe --user-id 10000000-0000-4000-8000-000000000001 --key contributor-smoke-v1
+docker compose exec api uv run python -m app.infrastructure.jobs.cli status --user-id 10000000-0000-4000-8000-000000000001 --job-id JOB_ID_FROM_PROBE
+```
+
+Replace `JOB_ID_FROM_PROBE` with the UUID printed by the first command. Poll status until
+`succeeded`; the scheduler scans every five seconds. Record actual job state and worker logs.
+If queued persists, check matching queue/Redis settings and worker/scheduler logs.
+This probe uses the seed user's fixed ID and performs no provider-side action.
+
+## Features awaiting implementation
+
+| Issue | Current contract | Documentation completion |
+|---|---|---|
+| #13 | Analysis creation/status PR #44 is under review | Add accepted 202, idempotency, state and failure examples after merge |
+| #14 | Recommendation list/detail merged | Examples included in OpenAPI |
+| #15 | Decision endpoints pending | Add request, conflict and ownership examples when implemented |
+| #16 | Action execution pending | Add queued/running/terminal and retry examples when implemented |
+| #17 | Savings APIs pending | Add estimated/verified and evidence examples when implemented |
+| #11 | Provider pipeline pending | No production fake/provider CLI mode exists on main |
+
+For the current deterministic development mode, run the seed and tests; those are fixtures,
+not live AI execution. Do not set undocumented provider flags. Use
+`uv run pytest tests/integration/recommendations tests/unit/analysis -q` for deterministic
+recommendation/calculation checks. Provider outage/retry troubleshooting will follow the
+accepted #11/#13 configuration rather than a guessed credential or URL.
+
+See `doc/issue-20-handoff.md` from the repository root for remaining human verification.
+
+
+## Register, log in and read a protected resource
+
+With the API listening on port 8000, PowerShell can capture the token automatically:
+
+```powershell
+$body = @{ email = 'contributor@example.com'; password = 'LocalExamplePass123!' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/auth/register -ContentType application/json -Body $body
+$login = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/auth/login -ContentType application/json -Body $body
+$headers = @{ Authorization = "Bearer $($login.tokens.access_token)" }
+Invoke-RestMethod -Uri http://127.0.0.1:8000/api/v1/me -Headers $headers
+Invoke-RestMethod -Uri http://127.0.0.1:8000/api/v1/recommendations -Headers $headers
+```
+
+Expected: registration 201 with user data, login 200 with `tokens`, protected GETs 200.
+A new user's recommendation list is empty; demo recommendations belong to the seeded
+users, whose placeholder hashes cannot be used to log in. Registration repeated with the
+same email returns 409; use the existing account's login or a different local email.
+These are synthetic local credentials, not an invitation to commit personal credentials.
+
+Bash equivalent (run from `backend/` so `uv run python` is available):
+
+```bash
+body='{"email":"contributor@example.com","password":"LocalExamplePass123!"}'
+curl -i -H 'Content-Type: application/json' -d "$body" http://127.0.0.1:8000/api/v1/auth/register
+token=$(curl -fsS -H 'Content-Type: application/json' -d "$body" http://127.0.0.1:8000/api/v1/auth/login | uv run python -c 'import json,sys; print(json.load(sys.stdin)["tokens"]["access_token"])')
+curl -i -H "Authorization: Bearer $token" http://127.0.0.1:8000/api/v1/me
+curl -i -H "Authorization: Bearer $token" http://127.0.0.1:8000/api/v1/recommendations
+```
+
+Inspect the ingestion request examples in `/docs`: measured zero has `quantity: "0"`
+and `is_unknown: false`; unknown usage has `quantity: null` and `is_unknown: true`.
+Do not combine a quantity with unknown usage. The usage idempotency key is optional;
+when supplied, replay it with the same owner/source/subscription/time/quantity/unknown
+values. Incompatible reuse returns 409. Transaction references similarly cannot be
+reassigned to another subscription; a same-subscription replay updates the recorded charge.
+Both ingestion endpoints return 201 with `status` and `message`, not a created resource ID.

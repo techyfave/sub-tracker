@@ -140,6 +140,11 @@ The current contributor walkthrough records the checks performed and the outstan
 
 ## Current stage
 
-The project is developing the shared-system foundation alongside the team's learning and prototype-comparison process. Continue to follow the [delivery roadmap](docs/roadmap.md), the [backend contributor runbook](backend/docs/contributor-runbook.md), and the documented decisions.
+The project is developing the shared-system foundation alongside the team's learning and prototype-comparison process. Continue to follow the [documentation index](doc/README.md), the [backend contributor runbook](backend/docs/contributor-runbook.md), and the documented decisions.
 
 The shared backend must remain reproducible, testable, and explicit about its limitations. Keep unimplemented AI-provider behavior and unverified infrastructure checks clearly distinguished from completed functionality.
+
+
+## Implemented recommendation API
+
+Issue #14 / PR #37 is merged: authenticated `GET /api/v1/recommendations` and `GET /api/v1/recommendations/{id}` return immutable snapshots. Use `page`, `page_size`, `status` (queued/running/completed/failed), `action` and `subscription_id` filters. Missing or foreign IDs return the same 404. Invalid filters/IDs return 422; missing authentication returns 401. Generated OpenAPI includes safe evidence, version, uncertainty and estimated-savings examples.
