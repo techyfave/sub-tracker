@@ -57,3 +57,14 @@ The human must complete the fresh-clone/Compose/Redis walkthrough described in
 [the handoff](issue-20-handoff.md). Do not convert these agent checks into a fabricated
 human sign-off. Future endpoint examples remain pending the merged contracts for
 #13/#15/#16/#17 and #11 provider modes.
+
+## Final check results
+
+- Full suite with TEST_DATABASE_URL: **177 passed, 1 skipped** (333.73 seconds).
+- One skip: optional live-Redis broker test; TEST_REDIS_URL was not configured.
+- Six focused documentation/audit regression checks passed, including deliberate removal of request, success and authorization examples to verify incomplete contracts fail the audit.
+- Ruff lint passed; 133 files passed formatting; strict mypy passed for 91 app source files.
+- OpenAPI completeness audit and git diff whitespace check passed.
+- Relative Markdown link checking found and corrected the obsolete root README roadmap link.
+
+The disposable PostgreSQL cluster is stopped and removed after verification. Its URLs are not persistent services for the human walkthrough; use the documented local Compose defaults.
