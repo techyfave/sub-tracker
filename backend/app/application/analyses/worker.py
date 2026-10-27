@@ -263,14 +263,23 @@ async def run_analysis(
     )
     session.add(recommendation)
     await session.flush()
+    if (
+        alternative_plan is not None
+        and sum(table == "plans" and key == alternative_plan.id for table, key, _ in snapshots) != 1
+    ):
+        raise PermanentJobError("ambiguous_selected_target")
     for table, key, snapshot in snapshots:
+        evidence_type = {"transactions": "billing", "plans": "plan", "usage_events": "usage"}[table]
+        if alternative_plan is not None and table == "plans" and key == alternative_plan.id:
+            # The selected, validated plan is part of the immutable result,
+            # independent of rationale, citations, prices or later catalog edits.
+            evidence_type = "selected_downgrade_target"
+            snapshot = {**snapshot, "target_schema_version": "1.0"}
         session.add(
             RecommendationEvidenceModel(
                 user_id=job.user_id,
                 recommendation_id=recommendation.id,
-                evidence_type={"transactions": "billing", "plans": "plan", "usage_events": "usage"}[
-                    table
-                ],
+                evidence_type=evidence_type,
                 source_table=table,
                 source_id=key,
                 snapshot_json=snapshot,

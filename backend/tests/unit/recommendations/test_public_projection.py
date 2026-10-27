@@ -125,3 +125,12 @@ def test_typed_snapshot_fields_preserve_precision_and_unknown_usage():
 )
 def test_typed_snapshot_fields_never_publish_nested_data(key):
     assert public_snapshot({key: {"model_trace": "secret"}}) == {}
+
+
+@pytest.mark.parametrize("value", ["2.0", "1", 1, True, {"model_trace": "secret"}])
+def test_target_schema_version_requires_supported_literal(value):
+    assert public_snapshot({"target_schema_version": value}) == {}
+
+
+def test_target_schema_version_is_public():
+    assert public_snapshot({"target_schema_version": "1.0"}) == {"target_schema_version": "1.0"}

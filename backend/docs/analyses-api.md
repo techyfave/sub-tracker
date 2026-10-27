@@ -83,3 +83,8 @@ AI adapters for issues #10/#11 consume the same stored evidence fields and cite
 provided source IDs. Recommendation list and detail endpoints retain validated
 amounts as decimal strings, unknown usage flags/null quantities, and provenance;
 internal metadata and model traces remain excluded.
+
+A completed downgrade retains its selected alternative as versioned immutable
+`selected_downgrade_target` evidence (source UUID, amount, currency and cadence).
+See the selected-target contract in `recommendations-api.md`; downstream approval
+must use that role rather than infer the target from savings or citations.

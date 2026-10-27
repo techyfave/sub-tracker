@@ -294,6 +294,19 @@ async def test_worker_actions_and_deterministic_savings(client, db_session, prep
         )
     )
     assert row.recommended_action.value == action
+    targets = list(
+        (
+            await db_session.scalars(
+                select(RecommendationEvidenceModel).where(
+                    RecommendationEvidenceModel.recommendation_id == row.id,
+                    RecommendationEvidenceModel.evidence_type == "selected_downgrade_target",
+                )
+            )
+        ).all()
+    )
+    assert len(targets) == (1 if action == "downgrade" else 0)
+    if targets:
+        assert targets[0].source_id == seed.BASIC_PLAN_ID
     if action == "review":
         assert row.monthly_savings_amount == 0
     elif action == "cancel":
@@ -524,3 +537,156 @@ async def test_generated_evidence_survives_public_list_and_detail(client, db_ses
     assert by_table["usage_events"]["kind"]
     assert Decimal(by_table["plans"]["amount"]) > 0
     assert by_table["plans"]["billing_interval"] == "monthly"
+
+
+async def test_selected_downgrade_target_survives_catalog_changes(client, db_session, prepared):
+    from sqlalchemy import update
+
+    from app.infrastructure.database.models.core import PlanModel, SubscriptionAlternativeModel
+
+    selected_id = UUID("30000000-0000-4000-8000-000000000004")
+    db_session.add(
+        PlanModel(
+            id=selected_id,
+            provider_id=seed.STREAMING_PROVIDER_ID,
+            name="Selected equal-price plan",
+            external_reference="selected-equal-price",
+            amount=Decimal("3000.0000"),
+            currency="NGN",
+            billing_interval="monthly",
+        )
+    )
+    await db_session.flush()
+    for plan_id in (seed.BASIC_PLAN_ID, selected_id):
+        db_session.add(
+            SubscriptionAlternativeModel(
+                subscription_id=seed.KEEP_SUBSCRIPTION_ID,
+                plan_id=plan_id,
+            )
+        )
+    await db_session.execute(
+        update(UsageEventModel)
+        .where(
+            UsageEventModel.subscription_id == seed.KEEP_SUBSCRIPTION_ID,
+        )
+        .values(occurred_at=datetime.now(UTC), quantity=2, is_unknown=False)
+    )
+    await db_session.commit()
+    created = await create(client)
+    assert created.status_code == 202, created.text
+    job = await db_session.scalar(select(JobModel))
+
+    class Pipeline(FakePipeline):
+        async def recommend(self, context):
+            # Neither rationale nor citation identifies the chosen alternative.
+            draft = await super().recommend(context)
+            return draft.model_copy(update={"alternative_plan_id": selected_id})
+
+    async def handler(session, job):
+        await run_analysis(session, job, Pipeline(action="downgrade"))
+
+    await JobRunner(
+        async_sessionmaker(db_session.bind, expire_on_commit=False), {"analysis.run": handler}
+    ).execute(job.id)
+    assert (await client.get(created.headers["location"])).json()["status"] == "completed"
+    row = await db_session.scalar(
+        select(RecommendationModel).where(
+            RecommendationModel.analysis_id == UUID(created.json()["id"]),
+        )
+    )
+    stored = list(
+        (
+            await db_session.scalars(
+                select(RecommendationEvidenceModel).where(
+                    RecommendationEvidenceModel.recommendation_id == row.id,
+                )
+            )
+        ).all()
+    )
+    selected = [piece for piece in stored if piece.evidence_type == "selected_downgrade_target"]
+    assert len(selected) == 1
+    assert selected[0].source_id == selected_id
+    assert selected[0].source_table == "plans"
+    expected_terms = {
+        "target_schema_version": "1.0",
+        "amount": "3000.0000",
+        "currency": "NGN",
+        "billing_interval": "monthly",
+    }
+    assert selected[0].snapshot_json == expected_terms
+    plan_sources = {piece.source_id for piece in stored if piece.source_table == "plans"}
+    assert plan_sources == {seed.STANDARD_PLAN_ID, seed.BASIC_PLAN_ID, selected_id}
+
+    async def public_result():
+        listing = await client.get(
+            "/api/v1/recommendations",
+            params={
+                "subscription_id": str(seed.KEEP_SUBSCRIPTION_ID),
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        item = next(item for item in listing.json()["items"] if item["id"] == str(row.id))
+        detail = await client.get(f"/api/v1/recommendations/{row.id}")
+        assert detail.status_code == 200, detail.text
+        assert detail.json() == item
+        targets = [
+            piece
+            for piece in item["evidence"]
+            if piece["evidence_type"] == "selected_downgrade_target"
+        ]
+        assert len(targets) == 1
+        assert targets[0]["source_id"] == str(selected_id)
+        assert targets[0]["snapshot"] == expected_terms
+        return item
+
+    before = await public_result()
+    await db_session.execute(
+        update(PlanModel)
+        .where(PlanModel.id == selected_id)
+        .values(
+            amount=Decimal("9999.9900"),
+            currency="USD",
+            billing_interval="yearly",
+            name="Changed",
+        )
+    )
+    await db_session.execute(
+        delete(SubscriptionAlternativeModel).where(
+            SubscriptionAlternativeModel.subscription_id == seed.KEEP_SUBSCRIPTION_ID,
+        )
+    )
+    await db_session.commit()
+    assert await public_result() == before
+    async with async_sessionmaker(db_session.bind, expire_on_commit=False)() as fresh:
+        persisted = await fresh.get(RecommendationEvidenceModel, selected[0].id)
+        assert persisted.source_id == selected_id
+        assert persisted.snapshot_json == expected_terms
+
+
+@pytest.mark.parametrize("selected_id", [None, UUID("30000000-0000-4000-8000-000000000099")])
+async def test_unvalidated_downgrade_target_is_not_persisted(
+    client, db_session, prepared, selected_id
+):
+    created = await create(client)
+    job = await db_session.scalar(select(JobModel))
+
+    class Pipeline(FakePipeline):
+        async def recommend(self, context):
+            draft = await super().recommend(context)
+            return draft.model_copy(update={"alternative_plan_id": selected_id})
+
+    async def handler(session, job):
+        await run_analysis(session, job, Pipeline(action="downgrade"))
+
+    await JobRunner(
+        async_sessionmaker(db_session.bind, expire_on_commit=False), {"analysis.run": handler}
+    ).execute(job.id)
+    assert (await client.get(created.headers["location"])).json()["status"] == "failed"
+    assert (
+        await db_session.scalar(
+            select(RecommendationModel).where(
+                RecommendationModel.analysis_id == UUID(created.json()["id"]),
+            )
+        )
+        is None
+    )

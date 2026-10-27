@@ -62,6 +62,7 @@ TYPED_EVIDENCE_KEYS = frozenset(
         "is_unknown",
         "quantity",
         "billing_interval",
+        "target_schema_version",
     }
 )
 # the only uncertainty keys that are public
@@ -113,6 +114,8 @@ def public_snapshot(raw: dict[str, Any]) -> dict[str, PublicValue]:
 
 def _is_public_evidence_value(key: str, value: object) -> bool:
     """Validate new evidence fields by type, retaining the #14 summary contract."""
+    if key == "target_schema_version":
+        return isinstance(value, str) and value == "1.0"
     if key in ("amount", "quantity"):
         if key == "quantity" and value is None:
             return True  # Missing quantity is distinct from an observed zero.

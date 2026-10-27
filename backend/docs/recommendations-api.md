@@ -94,3 +94,45 @@ row, and the stored snapshot remains immutable.
 These additions are validated field by field. Unknown keys, nested objects and
 lists, provider credentials, and model traces remain excluded from both list and
 detail responses. Raw ingestion metadata is never copied into public evidence.
+
+## Selected downgrade target, evidence contract 1.0
+
+A new completed downgrade includes exactly one evidence entry with
+`evidence_type: "selected_downgrade_target"`, `source_table: "plans"` and
+`source_id` equal to the provider-selected, validated alternative plan UUID.
+Its flat immutable snapshot contains:
+
+```json
+{
+  "target_schema_version": "1.0",
+  "amount": "3000.0000",
+  "currency": "NGN",
+  "billing_interval": "monthly"
+}
+```
+
+The same entry appears in recommendation list and detail responses. The version
+is allowlisted as the exact string `1.0`; amount, currency and cadence retain
+their existing field-specific validation. The ID and terms are copied from the
+validated stored alternative used for deterministic savings, never from free-text
+rationale or a price match. All current and other alternative plan snapshots are
+retained with their existing `plan` evidence type. Keep, cancel and review results
+have no selected downgrade target.
+
+The evidence row and terms commit atomically with the recommendation and are
+immutable. Readers use only saved evidence, so later plan price/currency/cadence
+edits or removal from the subscription's alternatives do not alter the result.
+Issue #15 approval should bind to the recommendation ID/version and this exact
+source ID plus saved terms; any check of current catalog eligibility is separate
+from the historical result. Legacy downgrades lacking this role have an unknown
+target: do not infer one from price, savings, citations or rationale, or backfill
+by guessing. They require a new analysis before exact-target approval.
+
+Integration with #10/#11 (including PR #45): the orchestration boundary must
+retain the selected alternative UUID separately from rationale/evidence refs.
+Only an owned subscription's stored, validated alternative may receive the
+selected role. Do not copy arbitrary provider fields into this contract, and do
+not lose the selected UUID while adapting another draft schema. PR #45's current
+draft does not include a selected-target field; its adapter must explicitly carry
+this selection when the two branches are integrated. This contract does not
+assert that a live AI gateway was executed.
