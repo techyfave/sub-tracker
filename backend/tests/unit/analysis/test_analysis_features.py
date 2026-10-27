@@ -12,6 +12,7 @@ from app.domain.analysis.features import (
     charges_per_year,
     classify_usage,
     evidence_freshness,
+    is_positive_saving,
     normalize_cost,
 )
 from app.domain.common.money import Money
@@ -162,3 +163,28 @@ def test_freshness_treats_naive_datetime_as_utc():
 
 def test_future_evidence_counts_as_fresh():
     assert evidence_freshness(NOW + timedelta(days=2), NOW) == Freshness.FRESH
+
+
+def test_fractional_saving_is_positive_annually_but_zero_monthly():
+    current = make_plan("100.02", BillingCadence.YEARLY)
+    alternative = make_plan("100.01", BillingCadence.YEARLY)
+    result = calculate_savings(current, alternative)
+    assert result.monthly == ngn("0.00")
+    assert result.annual == ngn("0.01")
+    assert is_positive_saving(result)
+
+
+def test_is_positive_saving_false_when_not_a_saving():
+    same = calculate_savings(
+        make_plan("100.00", BillingCadence.YEARLY), make_plan("100.00", BillingCadence.YEARLY)
+    )
+    pricier = calculate_savings(
+        make_plan("3000.00", BillingCadence.MONTHLY), make_plan("5000.00", BillingCadence.MONTHLY)
+    )
+    mismatch = calculate_savings(
+        make_plan("5000.00", BillingCadence.MONTHLY, "NGN"),
+        make_plan("5.00", BillingCadence.MONTHLY, "USD"),
+    )
+    assert not is_positive_saving(same)
+    assert not is_positive_saving(pricier)
+    assert not is_positive_saving(mismatch)

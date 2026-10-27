@@ -14,3 +14,8 @@
   `currency_mismatch`.
 - Unknown usage (`None`) is never treated as zero usage.
 - Freshness thresholds: <= 30 days fresh, <= 90 days aging, otherwise stale.
+- Positive-saving policy (`is_positive_saving`): the calculation succeeded, the annual
+  amount is above zero, and the monthly amount is not negative. A tiny saving can round to
+  0.00 per month and still be a real 0.01 per year. Annual savings come from the exact
+  prices, never from the rounded monthly figure. The contract validator and the analysis
+  worker must both use this function.

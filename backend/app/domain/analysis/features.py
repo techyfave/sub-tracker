@@ -169,3 +169,18 @@ def calculate_savings(current: Plan, alternative: Plan | None = None) -> Savings
         monthly=Money(monthly, currency),
         annual=Money(annual, currency),
     )
+
+
+def is_positive_saving(savings: Savings) -> bool:
+    """Shared policy: is this a real, representable saving?
+
+    True only when the calculation succeeded and the ANNUAL amount is above zero.
+    The monthly amount only has to be non-negative: a tiny saving can round to 0.00 per
+    month while still being a real 0.01 per year. Annual is never derived from the
+    rounded monthly figure.
+    """
+    if savings.status is not AnalysisStatus.OK:
+        return False
+    if savings.monthly is None or savings.annual is None:
+        return False
+    return savings.annual.amount > 0 and savings.monthly.amount >= 0
