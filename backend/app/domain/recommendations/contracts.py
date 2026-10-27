@@ -161,13 +161,19 @@ class RecommendationDraft:
 
 @dataclass(frozen=True, slots=True)
 class RecommendationContract:
-    """A validated draft plus deterministic savings plus versions."""
+    """A validated draft plus deterministic savings plus versions.
+
+    The evidence catalog is required, so a contract can never exist with ungrounded
+    evidence references, whether it was built from parsed output or constructed directly.
+    """
 
     draft: RecommendationDraft
     savings: features.Savings | None
     versions: ContractVersions
+    evidence_catalog: EvidenceCatalog
 
     def __post_init__(self) -> None:
+        _validate_grounding(self.draft, self.evidence_catalog)
         _validate_savings(self.draft.recommended_action, self.savings)
 
 
@@ -175,6 +181,13 @@ def zero_savings(currency: str) -> features.Savings:
     """Savings for a 'keep' recommendation: exactly zero, not unknown."""
     zero = Money(Decimal(0), currency)
     return features.Savings(features.AnalysisStatus.OK, monthly=zero, annual=zero)
+
+
+def _validate_grounding(draft: RecommendationDraft, catalog: EvidenceCatalog) -> None:
+    """Evidence may only point at supplied or deterministically derived facts."""
+    for ref in draft.evidence_refs:
+        if not catalog.knows(ref):
+            raise _fail(ViolationCode.UNKNOWN_EVIDENCE, "evidence_refs")
 
 
 def _validate_draft(draft: RecommendationDraft) -> None:
@@ -231,7 +244,7 @@ def _validate_savings(action: ActionType, savings: features.Savings | None) -> N
     if action is ActionType.KEEP:
         if monthly.amount != 0 or annual.amount != 0:
             raise _fail(ViolationCode.CONTRADICTION, "savings")
-    elif monthly.amount <= 0 or annual.amount <= 0:  # downgrade or cancel
+    elif not features.is_positive_saving(savings):  # downgrade or cancel
         raise _fail(ViolationCode.CONTRADICTION, "savings")
 
 
@@ -325,8 +338,5 @@ def parse_recommendation_draft(raw: object, catalog: EvidenceCatalog) -> Recomme
         ),
         rationale=rationale.strip(),
     )
-    # Evidence may only point at supplied or deterministically derived facts.
-    for ref in draft.evidence_refs:
-        if not catalog.knows(ref):
-            raise _fail(ViolationCode.UNKNOWN_EVIDENCE, "evidence_refs")
+    _validate_grounding(draft, catalog)
     return draft

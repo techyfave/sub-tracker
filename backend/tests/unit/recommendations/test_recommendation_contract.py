@@ -30,13 +30,17 @@ CATALOG = EvidenceCatalog(
 VERSIONS = ContractVersions(prompt_version="1.0.0", schema_version="1.0")
 
 
-def make_plan(amount: str, currency: str = "NGN") -> Plan:
+def make_plan(
+    amount: str,
+    currency: str = "NGN",
+    cadence: BillingCadence = BillingCadence.MONTHLY,
+) -> Plan:
     return Plan(
         provider_id=uuid.uuid4(),
         name="test plan",
         amount=Decimal(amount),
         currency=currency,
-        billing_interval=BillingCadence.MONTHLY,
+        billing_interval=cadence,
     )
 
 
@@ -66,7 +70,7 @@ def assert_rejected(raw: object, code: ViolationCode, field: str | None = None) 
 # ---------- Golden tests: the six scenarios in doc/seed-scenarios.md ----------
 def test_golden_keep():
     draft = parse_recommendation_draft(raw_draft(), CATALOG)
-    contract = RecommendationContract(draft, zero_savings("NGN"), VERSIONS)
+    contract = RecommendationContract(draft, zero_savings("NGN"), VERSIONS, CATALOG)
     assert contract.draft.recommended_action is ActionType.KEEP
     assert contract.savings is not None
     assert contract.savings.monthly == Money(Decimal("0"), "NGN")
@@ -76,7 +80,7 @@ def test_golden_keep():
 def test_golden_downgrade_saves_4000_monthly_48000_annual():
     draft = parse_recommendation_draft(raw_draft(recommended_action="downgrade"), CATALOG)
     savings = calculate_savings(make_plan("20000.00"), make_plan("16000.00"))
-    contract = RecommendationContract(draft, savings, VERSIONS)
+    contract = RecommendationContract(draft, savings, VERSIONS, CATALOG)
     assert contract.savings is not None
     assert contract.savings.monthly == Money(Decimal("4000"), "NGN")
     assert contract.savings.annual == Money(Decimal("48000"), "NGN")
@@ -85,7 +89,7 @@ def test_golden_downgrade_saves_4000_monthly_48000_annual():
 def test_golden_cancel_saves_full_cost():
     draft = parse_recommendation_draft(raw_draft(recommended_action="cancel"), CATALOG)
     savings = calculate_savings(make_plan("5000.00"))
-    contract = RecommendationContract(draft, savings, VERSIONS)
+    contract = RecommendationContract(draft, savings, VERSIONS, CATALOG)
     assert contract.savings is not None
     assert contract.savings.monthly == Money(Decimal("5000"), "NGN")
     assert contract.savings.annual == Money(Decimal("60000"), "NGN")
@@ -98,7 +102,9 @@ def test_golden_review_uncertain_evidence_has_unknown_savings():
         uncertainty={"level": "medium", "reason": "insufficient_evidence"},
         evidence_refs=[],
     )
-    contract = RecommendationContract(parse_recommendation_draft(raw, CATALOG), None, VERSIONS)
+    contract = RecommendationContract(
+        parse_recommendation_draft(raw, CATALOG), None, VERSIONS, CATALOG
+    )
     assert contract.draft.recommended_action is ActionType.REVIEW
     assert contract.savings is None  # unknown, NOT zero
 
@@ -113,7 +119,7 @@ def test_golden_missing_usage_is_review_not_zero_usage():
     )
     draft = parse_recommendation_draft(raw, CATALOG)
     assert draft.missing_information == ("usage_data",)
-    assert RecommendationContract(draft, None, VERSIONS).savings is None
+    assert RecommendationContract(draft, None, VERSIONS, CATALOG).savings is None
 
 
 def test_golden_conflicting_evidence_is_review():
@@ -126,7 +132,7 @@ def test_golden_conflicting_evidence_is_review():
     )
     draft = parse_recommendation_draft(raw, CATALOG)
     assert draft.conflicting_information == ("usage_vs_billing",)
-    assert RecommendationContract(draft, None, VERSIONS).savings is None
+    assert RecommendationContract(draft, None, VERSIONS, CATALOG).savings is None
 
 
 def test_derived_facts_are_valid_evidence():
@@ -293,7 +299,7 @@ def make_draft(action: str) -> RecommendationDraft:
 
 def assert_savings_rejected(action, savings, code, field="savings"):
     with pytest.raises(ContractError) as info:
-        RecommendationContract(make_draft(action), savings, VERSIONS)
+        RecommendationContract(make_draft(action), savings, VERSIONS, CATALOG)
     assert info.value.code == code
     assert info.value.field == field
 
@@ -388,7 +394,7 @@ def test_error_never_echoes_raw_content():
 
 
 def test_contract_is_immutable():
-    contract = RecommendationContract(make_draft("keep"), zero_savings("NGN"), VERSIONS)
+    contract = RecommendationContract(make_draft("keep"), zero_savings("NGN"), VERSIONS, CATALOG)
     with pytest.raises(FrozenInstanceError):
         contract.savings = None
     with pytest.raises(FrozenInstanceError):
@@ -402,3 +408,50 @@ def test_contract_errors_are_domain_errors():
 
 def test_action_values_match_the_stored_enum():
     assert {a.value for a in ActionType} == {a.value for a in RecommendationAction}
+
+
+# ---------- Review regressions ----------
+def _direct_draft(refs: tuple[str, ...]) -> RecommendationDraft:
+    return RecommendationDraft(
+        recommended_action=ActionType.KEEP,
+        confidence=Decimal("0.9000"),
+        uncertainty=Uncertainty(UncertaintyLevel.LOW),
+        evidence_refs=refs,
+        missing_information=(),
+        conflicting_information=(),
+        rationale="Looks fine.",
+    )
+
+
+@pytest.mark.parametrize("ref", ["fabricated-evidence", "derived:fabricated"])
+def test_direct_construction_cannot_bypass_grounding(ref):
+    with pytest.raises(ContractError) as info:
+        RecommendationContract(_direct_draft((ref,)), zero_savings("NGN"), VERSIONS, CATALOG)
+    assert info.value.code == ViolationCode.UNKNOWN_EVIDENCE
+    assert info.value.field == "evidence_refs"
+
+
+def test_direct_construction_with_grounded_evidence_is_accepted():
+    draft = _direct_draft(("usage-1", "derived:monthly_cost"))
+    contract = RecommendationContract(draft, zero_savings("NGN"), VERSIONS, CATALOG)
+    assert contract.evidence_catalog is CATALOG
+
+
+def test_fractional_annual_saving_is_accepted():
+    # yearly 100.02 vs 100.01: monthly rounds to 0.00, annual is a real 0.01
+    savings = calculate_savings(
+        make_plan("100.02", cadence=BillingCadence.YEARLY),
+        make_plan("100.01", cadence=BillingCadence.YEARLY),
+    )
+    contract = RecommendationContract(make_draft("downgrade"), savings, VERSIONS, CATALOG)
+    assert contract.savings is not None
+    assert contract.savings.monthly == Money(Decimal("0"), "NGN")
+    assert contract.savings.annual == Money(Decimal("0.01"), "NGN")
+
+
+def test_downgrade_with_no_annual_saving_rejected():
+    equal = calculate_savings(
+        make_plan("100.00", cadence=BillingCadence.YEARLY),
+        make_plan("100.00", cadence=BillingCadence.YEARLY),
+    )
+    assert_savings_rejected("downgrade", equal, ViolationCode.CONTRADICTION)
