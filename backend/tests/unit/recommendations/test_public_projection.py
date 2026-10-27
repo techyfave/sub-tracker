@@ -64,3 +64,73 @@ def test_uncertainty_projection_keeps_only_level_and_reason() -> None:
     assert public_uncertainty(raw) == {"level": "high", "reason": "missing_usage"}
     # unsafe or nested values become null instead of leaking
     assert public_uncertainty({"level": {"nested": "x"}}) == {"level": None, "reason": None}
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("amount", "NaN"),
+        ("amount", "1e10"),
+        ("amount", -1),
+        ("amount", True),
+        ("amount", "-1.00"),
+        ("amount", "1.00001"),
+        ("amount", "100000000000000.00"),
+        ("currency", "private-provider-secret"),
+        ("currency", {"access_token": "secret"}),
+        ("quantity", ["secret"]),
+        ("quantity", 1.5),
+        ("quantity", "Infinity"),
+        ("kind", "private model trace with spaces"),
+        ("is_unknown", "true"),
+        ("is_unknown", 1),
+        ("billing_interval", "secret"),
+        ("occurred_at", "secret"),
+        ("occurred_at", "2026-01-01T12:00:00"),
+        ("occurred_at", "2026-99-99T12:00:00+00:00"),
+    ],
+)
+def test_typed_snapshot_fields_reject_invalid_values(key, value):
+    assert public_snapshot({key: value}) == {}
+
+
+def test_typed_snapshot_fields_preserve_precision_and_unknown_usage():
+    raw = {
+        "amount": "120.0700",
+        "currency": "NGN",
+        "quantity": None,
+        "is_unknown": True,
+        "kind": "session",
+        "billing_interval": "yearly",
+        "occurred_at": "2026-01-01T12:00:00.123456+00:00",
+    }
+    assert public_snapshot(raw) == raw
+    assert public_snapshot({"quantity": "0.0000", "is_unknown": False}) == {
+        "quantity": "0.0000",
+        "is_unknown": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "amount",
+        "currency",
+        "quantity",
+        "is_unknown",
+        "kind",
+        "billing_interval",
+        "occurred_at",
+    ],
+)
+def test_typed_snapshot_fields_never_publish_nested_data(key):
+    assert public_snapshot({key: {"model_trace": "secret"}}) == {}
+
+
+@pytest.mark.parametrize("value", ["2.0", "1", 1, True, {"model_trace": "secret"}])
+def test_target_schema_version_requires_supported_literal(value):
+    assert public_snapshot({"target_schema_version": value}) == {}
+
+
+def test_target_schema_version_is_public():
+    assert public_snapshot({"target_schema_version": "1.0"}) == {"target_schema_version": "1.0"}

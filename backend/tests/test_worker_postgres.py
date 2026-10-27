@@ -285,3 +285,121 @@ async def test_redis_failure_does_not_lose_committed_work(jobs):
     sent.clear()
     await dispatch_due(sessions, sent.append)
     assert job_id not in sent
+
+
+async def test_concurrent_analysis_creation(jobs):
+    """Real unique-index contention must leave one analysis and one durable job."""
+    from sqlalchemy import func, select
+
+    from app.application.analyses.service import create_analysis
+    from app.infrastructure.database.models.core import (
+        AnalysisModel,
+        PlanModel,
+        PromptVersionModel,
+        ProviderModel,
+        SubscriptionModel,
+        SubscriptionStatus,
+        UsageEventModel,
+    )
+
+    sessions, user = jobs
+    provider_id, plan_id, subscription_id, prompt_id = [uuid4() for _ in range(4)]
+    async with sessions.begin() as session:
+        session.add(ProviderModel(id=provider_id, slug=str(provider_id), display_name="Concurrent"))
+        await session.flush()
+        session.add(
+            PlanModel(
+                id=plan_id,
+                provider_id=provider_id,
+                external_reference=str(plan_id),
+                name="Monthly",
+                amount=10,
+                currency="USD",
+                billing_interval="monthly",
+            )
+        )
+        session.add(
+            PromptVersionModel(
+                id=prompt_id,
+                name="subscription-recommendation",
+                version=str(prompt_id),
+                schema_version="1",
+                template="Test",
+                is_active=True,
+            )
+        )
+        await session.flush()
+        session.add(
+            SubscriptionModel(
+                id=subscription_id,
+                user_id=user,
+                plan_id=plan_id,
+                name="Subscription",
+                status=SubscriptionStatus.ACTIVE,
+            )
+        )
+        await session.flush()
+        session.add(
+            UsageEventModel(
+                user_id=user,
+                subscription_id=subscription_id,
+                occurred_at=datetime.now(UTC),
+                source="test",
+                kind="session",
+            )
+        )
+
+    async def request():
+        async with sessions.begin() as session:
+            result = await create_analysis(session, user, subscription_id, "concurrent-analysis")
+            return result.id
+
+    try:
+        with pytest.raises(RuntimeError, match="abort request"):
+            async with sessions.begin() as session:
+                await create_analysis(session, user, subscription_id, "aborted-analysis")
+                raise RuntimeError("abort request")
+        async with sessions() as session:
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(AnalysisModel)
+                    .where(AnalysisModel.user_id == user)
+                )
+                == 0
+            )
+            assert (
+                await session.scalar(
+                    select(func.count()).select_from(JobModel).where(JobModel.user_id == user)
+                )
+                == 0
+            )
+        results = await asyncio.gather(*(request() for _ in range(8)))
+        assert len(set(results)) == 1
+        async with sessions() as session:
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(AnalysisModel)
+                    .where(AnalysisModel.user_id == user)
+                )
+                == 1
+            )
+            assert (
+                await session.scalar(
+                    select(func.count()).select_from(JobModel).where(JobModel.user_id == user)
+                )
+                == 1
+            )
+    finally:
+        # The user fixture owns subscription/usage/analysis/job cleanup via CASCADE.
+        async with sessions.begin() as session:
+            await session.execute(delete(AnalysisModel).where(AnalysisModel.user_id == user))
+            await session.execute(
+                delete(SubscriptionModel).where(SubscriptionModel.id == subscription_id)
+            )
+            await session.execute(delete(PlanModel).where(PlanModel.id == plan_id))
+            await session.execute(delete(ProviderModel).where(ProviderModel.id == provider_id))
+            await session.execute(
+                delete(PromptVersionModel).where(PromptVersionModel.id == prompt_id)
+            )

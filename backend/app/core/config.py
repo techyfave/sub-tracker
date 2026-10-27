@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6379/0"
     job_queue: str = "sub-tracker.jobs"
+    analysis_provider_url: str = ""
+    analysis_provider_token: str = ""
 
     # Auth (issue #5). JWT bearer access tokens: ADR-001. Application-managed
     # Argon2id passwords and rotating opaque refresh tokens: ADR-007

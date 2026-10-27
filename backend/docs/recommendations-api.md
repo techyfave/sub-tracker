@@ -48,7 +48,7 @@ Returns one recommendation. A missing id, and an id owned by another user, both 
 Stored uncertainty and evidence JSON can contain internal values, so the API publishes only an allowlist:
 
 - uncertainty: only `level` and `reason`, and only as short simple tokens.
-- evidence snapshot: only these keys: sessions, value_signal, supports, lower_tier_suitable, requires_review, usage_available, reason, usage_signal, billing_signal, conflict. Values must be null, a boolean, a whole number or a short simple token. Nested objects and lists are never published.
+- evidence snapshot summaries: sessions, value_signal, supports, lower_tier_suitable, requires_review, usage_available, reason, usage_signal, billing_signal, conflict. Values must be null, a boolean, a whole number or a short simple token. The additional billing/usage/plan fields and their stricter validation are documented below. Nested objects and lists are never published.
 - Anything else, including unknown keys, is omitted without an error.
 - New public keys must be added to the allowlist deliberately, with a test.
 
@@ -70,3 +70,69 @@ Recommendations whose analysis is in a stored state the public vocabulary cannot
 
 - The `status` filter and the `analysis.status` field use the public analysis states from doc/TERMINOLOGY.md.
 - Issue #13 will persist analyses and recommendations through the existing models. If its contract changes the stored shape, the response schema is adjusted before final integration.
+## Typed billing, usage and plan evidence (issues #10/#11/#13/#14)
+
+The analysis writer and recommendation list/detail readers use the following
+additional flat snapshot fields. This is also the evidence contract for AI
+pipeline adapters in #10/#11; adapters cite source IDs and must not substitute
+model-generated amounts for stored plan/evidence values.
+
+| Source table | Public fields | Validation |
+| --- | --- | --- |
+| `transactions` | `amount`, `currency`, `occurred_at` | Non-negative decimal string, three uppercase currency letters, timezone-aware ISO timestamp |
+| `usage_events` | `kind`, `is_unknown`, `quantity`, `occurred_at` | Short token, strict boolean, non-negative decimal string or null, timezone-aware ISO timestamp |
+| `plans` | `amount`, `currency`, `billing_interval` | Non-negative decimal string, three uppercase currency letters, daily/weekly/monthly/yearly |
+
+Decimal strings preserve the stored `Numeric(18,4)` precision (up to 14 integer
+and 4 fractional digits); floats, exponents, non-finite and negative values are
+not published. `quantity: null` and `is_unknown: true` preserve unknown usage;
+unknown is never converted to zero. The writer normalizes timezone-naive database
+timestamps to UTC. Existing summary fields remain supported under their original
+validation rules. `source_table` and `source_id` continue to identify the original
+row, and the stored snapshot remains immutable.
+
+These additions are validated field by field. Unknown keys, nested objects and
+lists, provider credentials, and model traces remain excluded from both list and
+detail responses. Raw ingestion metadata is never copied into public evidence.
+
+## Selected downgrade target, evidence contract 1.0
+
+A new completed downgrade includes exactly one evidence entry with
+`evidence_type: "selected_downgrade_target"`, `source_table: "plans"` and
+`source_id` equal to the provider-selected, validated alternative plan UUID.
+Its flat immutable snapshot contains:
+
+```json
+{
+  "target_schema_version": "1.0",
+  "amount": "3000.0000",
+  "currency": "NGN",
+  "billing_interval": "monthly"
+}
+```
+
+The same entry appears in recommendation list and detail responses. The version
+is allowlisted as the exact string `1.0`; amount, currency and cadence retain
+their existing field-specific validation. The ID and terms are copied from the
+validated stored alternative used for deterministic savings, never from free-text
+rationale or a price match. All current and other alternative plan snapshots are
+retained with their existing `plan` evidence type. Keep, cancel and review results
+have no selected downgrade target.
+
+The evidence row and terms commit atomically with the recommendation and are
+immutable. Readers use only saved evidence, so later plan price/currency/cadence
+edits or removal from the subscription's alternatives do not alter the result.
+Issue #15 approval should bind to the recommendation ID/version and this exact
+source ID plus saved terms; any check of current catalog eligibility is separate
+from the historical result. Legacy downgrades lacking this role have an unknown
+target: do not infer one from price, savings, citations or rationale, or backfill
+by guessing. They require a new analysis before exact-target approval.
+
+Integration with #10/#11 (including PR #45): the orchestration boundary must
+retain the selected alternative UUID separately from rationale/evidence refs.
+Only an owned subscription's stored, validated alternative may receive the
+selected role. Do not copy arbitrary provider fields into this contract, and do
+not lose the selected UUID while adapting another draft schema. PR #45's current
+draft does not include a selected-target field; its adapter must explicitly carry
+this selection when the two branches are integrated. This contract does not
+assert that a live AI gateway was executed.

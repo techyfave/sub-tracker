@@ -38,3 +38,7 @@ The seed is idempotent. Running it again after a successful seed does not create
 ## Background worker
 
 See [background-jobs.md](docs/background-jobs.md) for Celery/Redis setup, durable job integration, retries, recovery and verification.
+
+## Asynchronous analysis
+
+See [analyses-api.md](docs/analyses-api.md) for creation, polling, idempotency and AI gateway configuration.
