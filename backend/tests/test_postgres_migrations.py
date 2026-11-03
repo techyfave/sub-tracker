@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import asyncio
@@ -7,6 +8,7 @@ import sys
 
 import asyncpg
 import pytest
+
 
 EXPECTED_CORE_TABLES = {
     "jobs",
@@ -31,7 +33,8 @@ EXPECTED_CORE_TABLES = {
     "transactions",
     "usage_events",
 }
-# tables that must exist after migration but that the demo seed does not fill
+
+# Tables that must exist after migration but that the demo seed does not fill.
 TABLES_NOT_SEEDED = {"subscription_alternatives", "jobs"}
 
 
@@ -39,14 +42,20 @@ def _database_urls() -> tuple[str, str]:
     async_url = os.getenv("TEST_DATABASE_URL", "")
     if not async_url:
         pytest.skip("TEST_DATABASE_URL is required for PostgreSQL migration tests")
-    return async_url, async_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+    return async_url, async_url.replace(
+        "postgresql+asyncpg://", "postgresql://", 1
+    )
 
 
 def _alembic(*arguments: str, database_url: str) -> None:
     environment = {**os.environ, "DATABASE_URL": database_url}
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
     subprocess.run(
         [sys.executable, "-m", "alembic", *arguments],
         check=True,
+        cwd=backend_dir,
         env=environment,
         capture_output=True,
         text=True,
@@ -56,7 +65,9 @@ def _alembic(*arguments: str, database_url: str) -> None:
 async def _table_names(dsn: str) -> set[str]:
     connection = await asyncpg.connect(dsn)
     try:
-        rows = await connection.fetch("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+        rows = await connection.fetch(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+        )
         return {row["tablename"] for row in rows}
     finally:
         await connection.close()
@@ -65,10 +76,12 @@ async def _table_names(dsn: str) -> set[str]:
 async def _table_row_counts(dsn: str) -> dict[str, int]:
     connection = await asyncpg.connect(dsn)
     try:
-        counts = {}
+        counts: dict[str, int] = {}
 
         for table in EXPECTED_CORE_TABLES:
-            row = await connection.fetchrow(f'SELECT COUNT(*) AS count FROM "{table}"')
+            row = await connection.fetchrow(
+                f'SELECT COUNT(*) AS count FROM "{table}"'
+            )
             counts[table] = row["count"]
 
         return counts
@@ -93,6 +106,7 @@ def test_upgrade_and_downgrade_round_trip_against_postgresql() -> None:
 
 def test_demo_seed_command_is_repeatable_against_postgresql() -> None:
     async_url, asyncpg_dsn = _database_urls()
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     _alembic("downgrade", "base", database_url=async_url)
     _alembic("upgrade", "head", database_url=async_url)
@@ -102,6 +116,7 @@ def test_demo_seed_command_is_repeatable_against_postgresql() -> None:
     subprocess.run(
         [sys.executable, "-m", "app.infrastructure.database.seed"],
         check=True,
+        cwd=backend_dir,
         env=environment,
         capture_output=True,
         text=True,
@@ -112,6 +127,7 @@ def test_demo_seed_command_is_repeatable_against_postgresql() -> None:
     subprocess.run(
         [sys.executable, "-m", "app.infrastructure.database.seed"],
         check=True,
+        cwd=backend_dir,
         env=environment,
         capture_output=True,
         text=True,
@@ -120,11 +136,16 @@ def test_demo_seed_command_is_repeatable_against_postgresql() -> None:
     second_counts = asyncio.run(_table_row_counts(asyncpg_dsn))
 
     assert first_counts == second_counts
-    # keep only the tables the seed is meant to fill
+
+    # Keep only the tables the seed is meant to fill.
     seeded_counts = {
-        table: count for table, count in first_counts.items() if table not in TABLES_NOT_SEEDED
+        table: count
+        for table, count in first_counts.items()
+        if table not in TABLES_NOT_SEEDED
     }
-    # every seeded table must contain rows
+
+    # Every seeded table must contain rows.
     assert all(count > 0 for count in seeded_counts.values())
-    # the unseeded tables must still be counted, so their repeatability stays covered
+
+    # The unseeded tables must still be counted, so their repeatability stays covered.
     assert first_counts.keys() >= TABLES_NOT_SEEDED

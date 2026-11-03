@@ -1,3 +1,4 @@
+
 """Optional real Celery/Redis delivery test; all services must be disposable."""
 
 import asyncio
@@ -5,6 +6,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -21,19 +23,33 @@ from app.infrastructure.database.repositories.jobs import PostgresJobRepository
 def test_celery_dispatch_duplicate_delivery_and_restart(tmp_path: Path) -> None:
     url = os.getenv("TEST_DATABASE_URL")
     redis_url = os.getenv("TEST_REDIS_URL")
+
     if not url or not redis_url:
-        pytest.skip("TEST_DATABASE_URL and TEST_REDIS_URL required for real broker test")
+        pytest.skip(
+            "TEST_DATABASE_URL and TEST_REDIS_URL required for real broker test"
+        )
+
     from celery import Celery
 
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     queue = "worker-test-" + uuid4().hex
     user_id = uuid4()
-    environment = {**os.environ, "DATABASE_URL": url, "REDIS_URL": redis_url, "JOB_QUEUE": queue}
+
+    environment = {
+        **os.environ,
+        "DATABASE_URL": url,
+        "REDIS_URL": redis_url,
+        "JOB_QUEUE": queue,
+    }
+
     subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
         check=True,
         env=environment,
         capture_output=True,
+        cwd=backend_dir,
     )
+
     publisher = Celery("smoke", broker=redis_url)
     publisher.conf.update(
         task_default_queue=queue,
@@ -46,13 +62,17 @@ def test_celery_dispatch_duplicate_delivery_and_restart(tmp_path: Path) -> None:
         engine = create_async_engine(url)
         try:
             sessions = async_sessionmaker(engine, expire_on_commit=False)
+
             async with sessions.begin() as session:
                 session.add(
                     UserModel(
-                        id=user_id, email=f"{user_id}@example.test", hashed_password="not-a-login"
+                        id=user_id,
+                        email=f"{user_id}@example.test",
+                        hashed_password="not-a-login",
                     )
                 )
                 await session.flush()
+
                 return await PostgresJobRepository(session).enqueue(
                     JobRequest(user_id, "system.probe", "first", {})
                 )
@@ -72,13 +92,13 @@ def test_celery_dispatch_duplicate_delivery_and_restart(tmp_path: Path) -> None:
         engine = create_async_engine(url)
         try:
             sessions = async_sessionmaker(engine, expire_on_commit=False)
+
             async with sessions.begin() as session:
                 job_id = await PostgresJobRepository(session).enqueue(
                     JobRequest(user_id, "system.probe", "restart", {})
                 )
-                # A prior process committed its claim, then disappeared.
-                from datetime import UTC, datetime, timedelta
 
+                # A prior process committed its claim, then disappeared.
                 await session.execute(
                     update(JobModel)
                     .where(JobModel.id == job_id)
@@ -89,18 +109,25 @@ def test_celery_dispatch_duplicate_delivery_and_restart(tmp_path: Path) -> None:
                         lease_until=datetime.now(UTC) - timedelta(seconds=1),
                     )
                 )
+
                 return job_id
         finally:
             await engine.dispose()
 
     def await_success(job_id):
         deadline = time.monotonic() + 45
+
         while time.monotonic() < deadline:
             value = asyncio.run(read(job_id))
+
             if value[0] == JobStatus.SUCCEEDED:
                 return value[1]
+
             time.sleep(0.25)
-        pytest.fail("Celery job did not finish; inspect worker/beat logs in " + str(tmp_path))
+
+        pytest.fail(
+            "Celery job did not finish; inspect worker/beat logs in " + str(tmp_path)
+        )
 
     log = (tmp_path / "worker.log").open("w")
     beat_log = (tmp_path / "beat.log").open("w")
@@ -132,6 +159,7 @@ def test_celery_dispatch_duplicate_delivery_and_restart(tmp_path: Path) -> None:
 
     def stop(process):
         process.terminate()
+
         try:
             process.wait(timeout=10)
         except subprocess.TimeoutExpired:
@@ -140,13 +168,18 @@ def test_celery_dispatch_duplicate_delivery_and_restart(tmp_path: Path) -> None:
 
     try:
         first_id = asyncio.run(setup())
+
         publisher.send_task("jobs.execute", args=[str(first_id)], queue=queue)
         publisher.send_task("jobs.execute", args=[str(first_id)], queue=queue)
+
         first_worker = worker()
         assert await_success(first_id) == 1
+
         stop(first_worker)
+
         recovered_id = asyncio.run(abandoned())
         worker()
+
         beat = subprocess.Popen(
             [
                 sys.executable,
@@ -163,15 +196,20 @@ def test_celery_dispatch_duplicate_delivery_and_restart(tmp_path: Path) -> None:
             stderr=subprocess.STDOUT,
         )
         processes.append(beat)
+
         # Actual beat -> Redis dispatcher -> PostgreSQL scan -> Redis worker delivery.
         assert await_success(recovered_id) == 2
+
         publisher.send_task("jobs.execute", args=[str(first_id)], queue=queue)
         time.sleep(1)
+
         assert asyncio.run(read(first_id)) == (JobStatus.SUCCEEDED, 1)
+
     finally:
         for process in reversed(processes):
             if process.poll() is None:
                 stop(process)
+
         publisher.control.purge()
         publisher.close()
         log.close()
@@ -181,7 +219,9 @@ def test_celery_dispatch_duplicate_delivery_and_restart(tmp_path: Path) -> None:
             engine = create_async_engine(url)
             try:
                 async with async_sessionmaker(engine).begin() as session:
-                    await session.execute(delete(UserModel).where(UserModel.id == user_id))
+                    await session.execute(
+                        delete(UserModel).where(UserModel.id == user_id)
+                    )
             finally:
                 await engine.dispose()
 

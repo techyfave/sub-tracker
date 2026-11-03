@@ -1,3 +1,4 @@
+﻿
 """Real PostgreSQL locks/transactions: SQLite cannot prove these guarantees."""
 
 import asyncio
@@ -30,8 +31,13 @@ def job_database_url() -> str:
     url = os.getenv("TEST_DATABASE_URL", "")
     if not url:
         pytest.skip("TEST_DATABASE_URL required for worker PostgreSQL tests")
+
+    # Run Alembic from the backend directory so it can locate alembic.ini.
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
     subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=backend_dir,
         env={**os.environ, "DATABASE_URL": url},
         check=True,
         capture_output=True,
@@ -46,10 +52,16 @@ async def jobs(
     engine = create_async_engine(job_database_url, pool_size=12)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     user_id = uuid4()
+
     async with sessions.begin() as session:
         session.add(
-            UserModel(id=user_id, email=f"{user_id}@example.test", hashed_password="not-a-login")
+            UserModel(
+                id=user_id,
+                email=f"{user_id}@example.test",
+                hashed_password="not-a-login",
+            )
         )
+
     try:
         yield sessions, user_id
     finally:
@@ -70,7 +82,10 @@ async def enqueue(
         )
 
 
-async def state(sessions: async_sessionmaker[AsyncSession], job_id: UUID) -> JobModel:
+async def state(
+    sessions: async_sessionmaker[AsyncSession],
+    job_id: UUID,
+) -> JobModel:
     async with sessions() as session:
         job = await session.get(JobModel, job_id)
         assert job is not None
@@ -84,7 +99,10 @@ async def effect(session: AsyncSession, job: JobModel) -> None:
     await session.flush()
 
 
-async def expire(sessions: async_sessionmaker[AsyncSession], job_id: UUID) -> None:
+async def expire(
+    sessions: async_sessionmaker[AsyncSession],
+    job_id: UUID,
+) -> None:
     async with sessions.begin() as session:
         await session.execute(
             update(JobModel)
@@ -106,17 +124,20 @@ async def test_enqueue_is_atomic_owner_scoped_and_conflict_checked(jobs):
 
     ids = await asyncio.gather(*(submit() for _ in range(8)))
     assert len(set(ids)) == 1
+
     with pytest.raises(IdempotencyConflict):
         async with sessions.begin() as session:
             await PostgresJobRepository(session).enqueue(
                 JobRequest(user, "test.effect", "one-key", {"analysis_id": "456"})
             )
+
     with pytest.raises(RuntimeError):
         async with sessions.begin() as session:
             rolled_back = await PostgresJobRepository(session).enqueue(
                 JobRequest(user, "test.effect", "rolled-back", {})
             )
             raise RuntimeError("request fails before commit")
+
     async with sessions() as session:
         assert await session.get(JobModel, rolled_back) is None
         assert await PostgresJobRepository(session).get(ids[0], uuid4()) is None
@@ -126,10 +147,13 @@ async def test_concurrent_and_repeated_delivery_commits_one_domain_result(jobs):
     sessions, user = jobs
     job_id = await enqueue(sessions, user)
     runner = JobRunner(sessions, {"test.effect": effect})
+
     await asyncio.gather(*(runner.execute(job_id) for _ in range(8)))
     await runner.execute(job_id)
+
     job = await state(sessions, job_id)
     assert job.status == JobStatus.SUCCEEDED and job.attempt_count == 1
+
     async with sessions() as session:
         account = await session.get(UserModel, user)
         assert account.email == f"{user}@example.test.done"
@@ -145,17 +169,23 @@ async def test_failure_rolls_back_domain_write_and_bounded_retry(jobs):
 
     runner = JobRunner(sessions, {"test.effect": transient}, retry_delay_seconds=5)
     await runner.execute(job_id)
+
     job = await state(sessions, job_id)
     assert job.status == JobStatus.QUEUED and job.failure_code == "transient"
     assert job.available_at > datetime.now(UTC)
+
     await runner.execute(job_id)
     assert (await state(sessions, job_id)).attempt_count == 1
+
     await expire(sessions, job_id)
     await runner.execute(job_id)
+
     job = await state(sessions, job_id)
     assert job.status == JobStatus.FAILED and job.attempt_count == 2
+
     async with sessions() as session:
         assert (await session.get(UserModel, user)).email == f"{user}@example.test"
+
     await runner.execute(job_id)
     assert (await state(sessions, job_id)).attempt_count == 2
 
@@ -167,7 +197,9 @@ async def test_failure_rolls_back_domain_write_and_bounded_retry(jobs):
         (ValueError("private detail"), "unexpected"),
     ],
 )
-async def test_permanent_and_unexpected_fail_without_automatic_retry(jobs, error, code, caplog):
+async def test_permanent_and_unexpected_fail_without_automatic_retry(
+    jobs, error, code, caplog
+):
     sessions, user = jobs
     job_id = await enqueue(sessions, user)
 
@@ -175,6 +207,7 @@ async def test_permanent_and_unexpected_fail_without_automatic_retry(jobs, error
         raise error
 
     await JobRunner(sessions, {"test.effect": fail}).execute(job_id)
+
     job = await state(sessions, job_id)
     assert job.status == JobStatus.FAILED and job.failure_code == code
     assert job.attempt_count == 1
@@ -185,12 +218,16 @@ async def test_expired_claim_is_recovered_and_stale_executor_is_fenced(jobs):
     sessions, user = jobs
     job_id = await enqueue(sessions, user)
     runner = JobRunner(sessions, {"test.effect": effect})
-    stale_token = await runner.claim(job_id)  # worker dies after committed claim
+
+    stale_token = await runner.claim(job_id)
     await expire(sessions, job_id)
     fresh_token = await runner.claim(job_id)
+
     assert stale_token and fresh_token and stale_token != fresh_token
+
     await runner.execute_claim(job_id, stale_token)
     assert (await state(sessions, job_id)).status == JobStatus.RUNNING
+
     await runner.execute_claim(job_id, fresh_token)
     job = await state(sessions, job_id)
     assert job.status == JobStatus.SUCCEEDED and job.attempt_count == 2
@@ -209,13 +246,16 @@ async def test_live_executor_lock_prevents_recovery_even_with_expired_lease(jobs
     runner = JobRunner(sessions, {"test.effect": slow})
     token = await runner.claim(job_id)
     await expire(sessions, job_id)
+
     task = asyncio.create_task(runner.execute_claim(job_id, token))
+
     try:
         await asyncio.wait_for(entered.wait(), 5)
         assert await runner.claim(job_id) is None
     finally:
         finish.set()
         await task
+
     assert (await state(sessions, job_id)).attempt_count == 1
 
 
@@ -229,15 +269,22 @@ async def test_worker_death_rolls_back_partial_result_then_recovers(jobs):
         entered.set()
         await asyncio.Event().wait()
 
-    task = asyncio.create_task(JobRunner(sessions, {"test.effect": interrupted}).execute(job_id))
+    task = asyncio.create_task(
+        JobRunner(sessions, {"test.effect": interrupted}).execute(job_id)
+    )
+
     await asyncio.wait_for(entered.wait(), 5)
     task.cancel()
+
     with pytest.raises(asyncio.CancelledError):
         await task
+
     await expire(sessions, job_id)
     await JobRunner(sessions, {"test.effect": effect}).execute(job_id)
+
     async with sessions() as session:
         assert (await session.get(UserModel, user)).email == f"{user}@example.test.done"
+
     assert (await state(sessions, job_id)).attempt_count == 2
 
 
@@ -248,23 +295,36 @@ async def test_timeout_and_crash_exhaustion_are_terminal_and_recoverable(jobs):
     async def slow(session, job):
         await asyncio.sleep(1)
 
-    await JobRunner(sessions, {"test.effect": slow}, timeout_seconds=0.01).execute(job_id)
+    await JobRunner(
+        sessions,
+        {"test.effect": slow},
+        timeout_seconds=0.01,
+    ).execute(job_id)
+
     assert (await state(sessions, job_id)).failure_code == "timeout"
+
     async with sessions.begin() as session:
         repo = PostgresJobRepository(session)
         assert not await repo.retry_failed(job_id, uuid4())
         assert await repo.retry_failed(job_id, user)
+
     assert (await state(sessions, job_id)).retry_count == 1
+
     runner = JobRunner(sessions, {"test.effect": effect})
     assert await runner.claim(job_id)
+
     await expire(sessions, job_id)
     assert await runner.claim(job_id) is None
     assert (await state(sessions, job_id)).failure_code == "attempts_exhausted"
+
     async with sessions.begin() as session:
         assert await PostgresJobRepository(session).retry_failed(job_id, user)
+
     await runner.execute(job_id)
+
     job = await state(sessions, job_id)
     assert job.status == JobStatus.SUCCEEDED and job.retry_count == 2
+
     async with sessions.begin() as session:
         assert not await PostgresJobRepository(session).retry_failed(job_id, user)
 
@@ -278,10 +338,13 @@ async def test_redis_failure_does_not_lose_committed_work(jobs):
 
     assert await dispatch_due(sessions, unavailable) == 0
     assert (await state(sessions, job_id)).status == JobStatus.QUEUED
+
     sent = []
     await dispatch_due(sessions, sent.append)
     assert job_id in sent
+
     await JobRunner(sessions, {"test.effect": effect}).execute(job_id)
+
     sent.clear()
     await dispatch_due(sessions, sent.append)
     assert job_id not in sent
