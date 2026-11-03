@@ -39,7 +39,20 @@ class ConsentCreateRequest(BaseModel):
 
 
 class ConsentResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": "00000000-0000-4000-8000-000000000001",
+                    "policy_version": "2026-10",
+                    "scopes": ["subscriptions.read"],
+                    "granted_at": "2026-10-01T10:00:00Z",
+                    "revoked_at": None,
+                }
+            ]
+        },
+    )
 
     id: UUID
     policy_version: str
@@ -60,4 +73,21 @@ class ConsentResponse(BaseModel):
 
 
 class ConsentListResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "items": [
+                        {
+                            "id": "00000000-0000-4000-8000-000000000001",
+                            "policy_version": "2026-10",
+                            "scopes": ["subscriptions.read"],
+                            "granted_at": "2026-10-01T10:00:00Z",
+                            "revoked_at": None,
+                        }
+                    ]
+                }
+            ]
+        }
+    )
     items: list[ConsentResponse]

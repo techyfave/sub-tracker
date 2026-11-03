@@ -5,12 +5,26 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_NUMERIC_18_4 = Decimal("99999999999999.9999")
 
 
 class TransactionCreate(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "occurrence_time": "2026-10-01T10:00:00Z",
+                    "source": "manual",
+                    "amount": "5000.00",
+                    "currency": "NGN",
+                    "external_reference": "charge-001",
+                }
+            ]
+        }
+    )
+
     amount: Decimal = Field(
         ...,
         ge=Decimal("0"),
@@ -58,6 +72,29 @@ class TransactionCreate(BaseModel):
 
 
 class UsageEventCreate(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "occurrence_time": "2026-10-01T10:00:00Z",
+                    "source": "manual",
+                    "subscription_id": "40000000-0000-4000-8000-000000000001",
+                    "quantity": "0",
+                    "is_unknown": False,
+                    "idempotency_key": "usage-001",
+                },
+                {
+                    "occurrence_time": "2026-10-01T10:00:00Z",
+                    "source": "manual",
+                    "subscription_id": "40000000-0000-4000-8000-000000000001",
+                    "quantity": None,
+                    "is_unknown": True,
+                    "idempotency_key": "unknown-001",
+                },
+            ]
+        }
+    )
+
     subscription_id: UUID
     occurrence_time: datetime = Field(
         ...,

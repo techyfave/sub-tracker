@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query  # web framework pieces
 from sqlalchemy.ext.asyncio import AsyncSession  # async DB session
 
 from app.api.problem_details import raise_problem  # shared Problem Details raiser
+from app.api.recommendation_examples import recommendation_responses
 from app.api.v1.dependencies.auth import CurrentUser  # logged-in user dependency
 from app.api.v1.schemas.common import MoneySchema, PaginationMeta  # shared schemas
 from app.api.v1.schemas.recommendation import (  # response schemas and projections
@@ -92,6 +93,7 @@ def to_response(item: Recommendation) -> RecommendationResponse:
 @router.get(
     "",  # GET /recommendations
     response_model=RecommendationListResponse,  # response shape
+    responses=recommendation_responses(),
 )
 async def list_recommendations(
     current_user: CurrentUser,  # logged-in user
@@ -130,6 +132,7 @@ async def list_recommendations(
 @router.get(
     "/{recommendation_id}",  # GET /recommendations/{id}
     response_model=RecommendationResponse,  # response shape
+    responses=recommendation_responses(detail=True),
 )
 async def get_recommendation(
     recommendation_id: uuid.UUID,  # path id
