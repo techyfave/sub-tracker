@@ -21,4 +21,5 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "asyncpg-stubs>=0.32.0",
+    "pytest>=9.2.0",
 ]
