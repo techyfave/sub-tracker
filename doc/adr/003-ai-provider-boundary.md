@@ -35,27 +35,39 @@ local GPU/CPU resources, and low operational overhead.
   - `AI_MODEL` — model identifier for the selected provider
   - `AI_BASE_URL` — override endpoint (used for `jan`, which runs locally)
   - `AI_REQUEST_TIMEOUT_MS` — per-call timeout (default `30000`)
-- A **provider-neutral application port** is defined; all analysis and
-  recommendation code depends only on this interface, never on a specific
-  vendor SDK:
+- A **provider-neutral application port** is defined; recommendation
+  generation depends only on the structured invocation interface, never on
+  a specific vendor SDK:
 
   ```
-  interface AIProviderPort {
-    analyze(input: UsageEventBundle): Promise<AnalysisResult>
+  interface AIProvider {
+    generate_structured({
+      system_prompt, context, output_schema, prompt_version, repair_feedback
+    }): Promise<StructuredOutput>
   }
   ```
 
-  `AnalysisResult` is a provider-neutral shape (summary, findings,
-  recommendation drafts with supporting evidence, confidence signal) that
-  every adapter must produce regardless of the underlying vendor's native
-  response format.
+  The application builds a bounded context from allowlisted facts and omits
+  user identifiers and contact data. Imported text is marked and treated as
+  untrusted data. The model's strict output schema contains recommendation
+  fields only; deterministic savings, prompt/schema versions, and action
+  completion status are owned by the application, not the model.
 
-- `GroqAdapter` implements `AIProviderPort` for the MVP. Additional adapters,
+- A generated result is not persistence-ready until structured validation,
+  evidence ID/path/source grounding, and deterministic business-policy checks
+  all pass. Invalid output and transient provider failures have separate
+  classifications. Repair/retry is bounded to at most three calls, and
+  downstream persistence must consume only the resulting validated contract.
+- `FakeAIProvider` implements the same port for deterministic unit and
+  contract tests. Provider adapters must map their own failures to the
+  provider-neutral transient or permanent error types.
+
+- `GroqAdapter` can implement `AIProvider` for the MVP. Additional adapters,
   such as `GeminiAdapter` or `JanAdapter`, may be added when those providers
   are supported. Selection happens in composition/wiring code based on
   `AI_PROVIDER`; domain and application modules never branch on provider
   identity.
-- The `run-analysis` background job (ADR-002) calls `AIProviderPort`, not
+- The `run-analysis` background job (ADR-002) calls `AIProvider`, not
   a specific vendor client.
 
 ## Consequences
@@ -70,8 +82,8 @@ local GPU/CPU resources, and low operational overhead.
   `jan` without any application-code change.
 
 ### Negative
-- `AnalysisResult` must be kept intentionally generic, which means some
-  provider-specific capabilities (e.g., a feature unique to one vendor's
+- The structured output contract must be kept provider-neutral, which means
+  some provider-specific capabilities (e.g., a feature unique to one vendor's
   API) can't be exposed to callers without widening the port for everyone.
 - Behavioral differences between providers (quality, latency, failure
   modes) are real and not fully hidden by the interface; adapters must
